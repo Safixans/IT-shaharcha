@@ -1,0 +1,519 @@
+# Portfolio service — "Upload certificates", "Build a complete academic portfolio".
+#
+# Owns: certificate uploads (+ verification), education history, free-form
+# portfolio items, and the publishable academic portfolio. Emits portfolio.*
+# events and exposes the shared analytics read sub-API.
+#
+# Base path: /api/v1/portfolio. File bytes are uploaded multipart; the stored
+# fileId is referenced from certificates/items.
+openapi: 3.1.0
+info:
+  title: IT-Shaharcha — Portfolio Service
+  version: 1.0.0
+  description: Certificates, education history, portfolio items, and the academic portfolio.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: /api/v1
+    description: Versioned platform base path (behind the gateway).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: certificates
+    description: Certificate upload and verification.
+  - name: education
+    description: Education history.
+  - name: items
+    description: Free-form portfolio items (projects, awards, etc.).
+  - name: portfolio
+    description: The assembled academic portfolio — publish & view.
+  - name: files
+    description: Uploaded file blobs.
+  - name: analytics
+    description: Uniform domain analytics read API.
+
+paths:
+  # ==========================================================================
+  # Files
+  # ==========================================================================
+  /portfolio/files:
+    post:
+      operationId: uploadFile
+      summary: Upload a file blob (PDF/image); returns a fileId to reference.
+      tags: [files]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Stored file reference.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/FileRef" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "413": { $ref: "./shared/common.yaml#/components/responses/PayloadTooLarge" }
+        "415":
+          description: Unsupported media type.
+          content:
+            application/json:
+              schema: { $ref: "./shared/common.yaml#/components/schemas/ErrorResponse" }
+
+  # ==========================================================================
+  # Certificates
+  # ==========================================================================
+  /portfolio/certificates:
+    get:
+      operationId: listCertificates
+      summary: List the caller's certificates.
+      tags: [certificates]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of certificates.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Certificate" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+    post:
+      operationId: uploadCertificate
+      summary: Register a certificate (referencing an uploaded fileId). Emits portfolio.certificate.uploaded.
+      tags: [certificates]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CertificateCreate" }
+      responses:
+        "201":
+          description: Certificate registered (status PENDING verification).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Certificate" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+
+  /portfolio/certificates/{certificateId}:
+    parameters:
+      - name: certificateId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCertificate
+      summary: Get a certificate.
+      tags: [certificates]
+      responses:
+        "200":
+          description: The certificate.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Certificate" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+    delete:
+      operationId: deleteCertificate
+      summary: Delete a certificate (owner).
+      tags: [certificates]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /portfolio/certificates/{certificateId}:verify:
+    parameters:
+      - name: certificateId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: verifyCertificate
+      summary: Verify a certificate (reviewer/admin). Emits portfolio.certificate.verified.
+      tags: [certificates]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verified: { type: boolean, default: true }
+                note: { type: [string, "null"] }
+      responses:
+        "200":
+          description: Updated certificate.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Certificate" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # Education
+  # ==========================================================================
+  /portfolio/education:
+    get:
+      operationId: listEducation
+      summary: List the caller's education entries.
+      tags: [education]
+      responses:
+        "200":
+          description: Education entries.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Education" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+    post:
+      operationId: addEducation
+      summary: Add an education entry. Emits portfolio.education.added.
+      tags: [education]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCreate" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Education" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+
+  /portfolio/education/{educationId}:
+    parameters:
+      - name: educationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: deleteEducation
+      summary: Delete an education entry.
+      tags: [education]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # Portfolio items
+  # ==========================================================================
+  /portfolio/items:
+    get:
+      operationId: listItems
+      summary: List the caller's portfolio items.
+      tags: [items]
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/ItemKind" }
+      responses:
+        "200":
+          description: Items.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/PortfolioItem" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+    post:
+      operationId: addItem
+      summary: Add a portfolio item. Emits portfolio.item.added.
+      tags: [items]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PortfolioItemCreate" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/PortfolioItem" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+
+  /portfolio/items/{itemId}:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: deleteItem
+      summary: Delete a portfolio item.
+      tags: [items]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # The academic portfolio (assembled view)
+  # ==========================================================================
+  /portfolio/me:
+    get:
+      operationId: getMyPortfolio
+      summary: Get the caller's assembled academic portfolio.
+      tags: [portfolio]
+      responses:
+        "200":
+          description: The portfolio.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Portfolio" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+
+  /portfolio/me:publish:
+    post:
+      operationId: publishPortfolio
+      summary: Publish the portfolio at a public handle. Emits portfolio.published.
+      tags: [portfolio]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                handle: { type: [string, "null"], description: Desired public handle. }
+                visibility:
+                  type: string
+                  enum: [public, unlisted]
+                  default: public
+      responses:
+        "200":
+          description: Published.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Portfolio" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "409": { $ref: "./shared/common.yaml#/components/responses/Conflict" }
+
+  /portfolio/public/{handle}:
+    parameters:
+      - name: handle
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getPublicPortfolio
+      summary: View a published portfolio by handle (public).
+      tags: [portfolio]
+      security: []
+      responses:
+        "200":
+          description: The published portfolio.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Portfolio" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # Uniform analytics sub-API (identical across every service)
+  # ==========================================================================
+  /portfolio/analytics/summary:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsSummary"
+  /portfolio/analytics/activity:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsActivity"
+  /portfolio/analytics/metrics:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsMetrics"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: "./shared/common.yaml#/components/securitySchemes/bearerAuth"
+
+  schemas:
+    VerificationStatus:
+      type: string
+      enum: [PENDING, VERIFIED, REJECTED]
+
+    ItemKind:
+      type: string
+      enum: [project, award, publication, experience, skill, link]
+
+    FileRef:
+      type: object
+      required: [fileId, contentType, sizeBytes]
+      properties:
+        fileId: { type: string, format: uuid, example: "0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a" }
+        contentType: { type: string, example: "application/pdf" }
+        sizeBytes: { type: integer, minimum: 0, example: 248213 }
+        url: { type: [string, "null"], format: uri, description: Download URL if served., example: "https://files.itsh.dev/0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a" }
+
+    CertificateCreate:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, example: "AWS Certified Cloud Practitioner" }
+        issuer: { type: [string, "null"], example: "Amazon Web Services" }
+        issuedOn: { type: [string, "null"], format: date, example: "2026-03-15" }
+        fileId: { type: [string, "null"], format: uuid, example: "0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a" }
+        credentialUrl: { type: [string, "null"], format: uri, example: "https://www.credly.com/badges/abc123" }
+
+    Certificate:
+      allOf:
+        - $ref: "#/components/schemas/CertificateCreate"
+        - type: object
+          required: [id, accountId, status, createdAt]
+          properties:
+            id: { type: string, format: uuid, example: "1b1b1b1b-1b1b-1b1b-1b1b-1b1b1b1b1b1b" }
+            accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+            status: { $ref: "#/components/schemas/VerificationStatus" }
+            createdAt: { type: string, format: date-time, example: "2026-03-16T10:00:00Z" }
+            verifiedAt: { type: [string, "null"], format: date-time, example: "2026-03-18T12:00:00Z" }
+
+    EducationCreate:
+      type: object
+      required: [institution]
+      properties:
+        institution: { type: string, example: "Tashkent University of Information Technologies" }
+        degree: { type: [string, "null"], example: "BSc" }
+        fieldOfStudy: { type: [string, "null"], example: "Computer Science" }
+        startDate: { type: [string, "null"], format: date, example: "2022-09-01" }
+        endDate: { type: [string, "null"], format: date, example: "2026-06-30" }
+        description: { type: [string, "null"], maxLength: 1000, example: "Focus on distributed systems and ML." }
+
+    Education:
+      allOf:
+        - $ref: "#/components/schemas/EducationCreate"
+        - type: object
+          required: [id, accountId]
+          properties:
+            id: { type: string, format: uuid, example: "2c2c2c2c-2c2c-2c2c-2c2c-2c2c2c2c2c2c" }
+            accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+
+    PortfolioItemCreate:
+      type: object
+      required: [kind, title]
+      properties:
+        kind: { $ref: "#/components/schemas/ItemKind" }
+        title: { type: string, example: "Task Manager App" }
+        description: { type: [string, "null"], maxLength: 2000, example: "Full-stack todo app built with React and Spring Boot." }
+        url: { type: [string, "null"], format: uri, example: "https://github.com/aziz/task-manager" }
+        fileId: { type: [string, "null"], format: uuid, example: null }
+        tags:
+          type: array
+          items: { type: string }
+          example: ["react", "spring-boot", "postgres"]
+
+    PortfolioItem:
+      allOf:
+        - $ref: "#/components/schemas/PortfolioItemCreate"
+        - type: object
+          required: [id, accountId, createdAt]
+          properties:
+            id: { type: string, format: uuid, example: "3d3d3d3d-3d3d-3d3d-3d3d-3d3d3d3d3d3d" }
+            accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+            createdAt: { type: string, format: date-time, example: "2026-04-10T08:30:00Z" }
+
+    Portfolio:
+      type: object
+      required: [accountId, certificates, education, items]
+      properties:
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        handle: { type: [string, "null"], example: "aziz-karimov" }
+        visibility:
+          type: string
+          enum: [private, unlisted, public]
+          default: private
+          example: public
+        publishedAt: { type: [string, "null"], format: date-time, example: "2026-05-01T00:00:00Z" }
+        certificates:
+          type: array
+          items: { $ref: "#/components/schemas/Certificate" }
+        education:
+          type: array
+          items: { $ref: "#/components/schemas/Education" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PortfolioItem" }

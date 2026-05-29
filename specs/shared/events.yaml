@@ -1,0 +1,210 @@
+# Canonical event contract for the IT-Shaharcha platform.
+#
+# EVERY service emits events using the DomainEvent envelope below. Events are the
+# single source of truth for the analytics service (progress tracking, rankings,
+# dashboards). Producing an event is mandatory for any user-meaningful action.
+#
+# Transport: Kafka. Topic naming is `itsh.<service>.events` (one topic per source
+# service); the Kafka message key is the actor.accountId (so a user's events keep
+# ordering). The analytics service is the primary consumer. A REST fallback exists
+# at analytics `POST /api/v1/analytics/events:ingest` for environments without a
+# broker — it accepts the exact same DomainEvent schema.
+#
+# Versioning: `specVersion` pins the envelope shape; `type` is suffixed implicitly
+# by payload evolution (add optional fields only; never repurpose a field).
+openapi: 3.1.0
+info:
+  title: IT-Shaharcha — Event Catalog
+  version: 1.0.0
+  description: Canonical DomainEvent envelope and the per-service event type catalog.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+paths: {}
+
+components:
+  schemas:
+    # ------------------------------------------------------------------------
+    # Envelope — identical for every event on every topic.
+    # ------------------------------------------------------------------------
+    DomainEvent:
+      type: object
+      required: [eventId, type, source, specVersion, occurredAt, actor, data]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique id; consumers dedupe on this.
+        type:
+          $ref: "#/components/schemas/EventType"
+        source:
+          $ref: "#/components/schemas/ServiceName"
+        specVersion:
+          type: string
+          const: "1.0"
+          description: Version of the DomainEvent envelope itself.
+        occurredAt:
+          type: string
+          format: date-time
+          description: When the action happened (producer clock).
+        recordedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the event was persisted/published (optional).
+        actor:
+          $ref: "#/components/schemas/Actor"
+        subject:
+          $ref: "#/components/schemas/Subject"
+        context:
+          $ref: "#/components/schemas/EventContext"
+        data:
+          type: object
+          description: >
+            Type-specific payload. Its shape is governed by `type` — see the
+            catalog and payload schemas below. Always an object (never null).
+          additionalProperties: true
+      examples:
+        - eventId: "8b1c8a7e-3a9d-4c2f-9b1a-1d2e3f4a5b6c"
+          type: "learning.lesson.completed"
+          source: "learning"
+          specVersion: "1.0"
+          occurredAt: "2026-05-29T10:20:00Z"
+          actor: { accountId: "11111111-1111-1111-1111-111111111111", roles: ["ROLE_STUDENT"] }
+          subject: { type: "lesson", id: "22222222-2222-2222-2222-222222222222" }
+          context: { sessionId: "sess-abc", source: "web" }
+          data: { courseId: "33333333-3333-3333-3333-333333333333", durationSeconds: 540, scorePercent: 100 }
+
+    Actor:
+      type: object
+      description: Who triggered the event.
+      required: [accountId]
+      properties:
+        accountId: { type: string, format: uuid }
+        roles:
+          type: array
+          items: { type: string }
+        anonymous:
+          type: boolean
+          default: false
+
+    Subject:
+      type: object
+      description: The primary entity the event is about.
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          description: Entity kind, e.g. course, lesson, exam, certificate.
+        id: { type: string }
+
+    EventContext:
+      type: object
+      description: Optional environmental context for analytics segmentation.
+      properties:
+        sessionId: { type: [string, "null"] }
+        source:
+          type: string
+          enum: [web, mobile, system, import]
+          default: web
+        ip: { type: [string, "null"] }
+        userAgent: { type: [string, "null"] }
+        locale: { type: [string, "null"] }
+        traceId: { type: [string, "null"] }
+
+    ServiceName:
+      type: string
+      enum: [identity, learning, assessment, portfolio, analytics]
+
+    # ------------------------------------------------------------------------
+    # Event type catalog — the closed set of recognized event types.
+    # Naming: <service>.<entity>.<pastTenseVerb>
+    # ------------------------------------------------------------------------
+    EventType:
+      type: string
+      description: Recognized event types across all services.
+      enum:
+        # identity
+        - identity.account.registered
+        - identity.account.verified
+        - identity.account.suspended
+        - identity.login.succeeded
+        - identity.login.failed
+        - identity.profile.updated
+        # learning
+        - learning.course.enrolled
+        - learning.lesson.started
+        - learning.lesson.completed
+        - learning.tutorial.watched
+        - learning.doc.read
+        - learning.typing.session.completed
+        - learning.skill.leveled_up
+        # assessment
+        - assessment.exam.started
+        - assessment.exam.submitted
+        - assessment.exam.scored
+        - assessment.mock.completed
+        # portfolio
+        - portfolio.certificate.uploaded
+        - portfolio.certificate.verified
+        - portfolio.education.added
+        - portfolio.item.added
+        - portfolio.published
+        # analytics (derived/emitted by the analytics service itself)
+        - analytics.milestone.reached
+        - analytics.ranking.updated
+
+    # ------------------------------------------------------------------------
+    # Representative payload schemas (the `data` object per type).
+    # These document the agreed shape; producers MUST conform.
+    # ------------------------------------------------------------------------
+    LessonCompletedData:
+      type: object
+      required: [courseId, durationSeconds]
+      properties:
+        courseId: { type: string, format: uuid, example: "44444444-4444-4444-4444-444444444444" }
+        moduleId: { type: [string, "null"], format: uuid, example: "55555555-5555-5555-5555-555555555555" }
+        durationSeconds: { type: integer, minimum: 0, example: 540 }
+        scorePercent: { type: [number, "null"], minimum: 0, maximum: 100, example: 100 }
+
+    TypingSessionCompletedData:
+      type: object
+      required: [wpm, accuracyPercent, durationSeconds]
+      properties:
+        wpm: { type: number, minimum: 0, example: 68.5 }
+        accuracyPercent: { type: number, minimum: 0, maximum: 100, example: 97.2 }
+        durationSeconds: { type: integer, minimum: 0, example: 120 }
+        keystrokes: { type: integer, minimum: 0, example: 412 }
+        lessonId: { type: [string, "null"], format: uuid, example: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }
+
+    ExamScoredData:
+      type: object
+      required: [examId, examType, scaledScore]
+      properties:
+        examId: { type: string, format: uuid, example: "d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1" }
+        examType: { type: string, enum: [IELTS, SAT, MOCK, PRACTICE], example: IELTS }
+        scaledScore: { type: number, example: 7.5 }
+        maxScore: { type: [number, "null"], example: 9 }
+        sectionScores:
+          type: array
+          items:
+            type: object
+            properties:
+              section: { type: string, example: "Reading" }
+              score: { type: number, example: 8 }
+
+    CertificateUploadedData:
+      type: object
+      required: [certificateId, title]
+      properties:
+        certificateId: { type: string, format: uuid, example: "1b1b1b1b-1b1b-1b1b-1b1b-1b1b1b1b1b1b" }
+        title: { type: string, example: "AWS Certified Cloud Practitioner" }
+        issuer: { type: [string, "null"], example: "Amazon Web Services" }
+        fileId: { type: [string, "null"], format: uuid, example: "0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a" }
+
+    MilestoneReachedData:
+      type: object
+      required: [milestone]
+      properties:
+        milestone: { type: string, example: "first_mock_exam" }
+        points: { type: integer, default: 0 }
+        domain: { $ref: "#/components/schemas/ServiceName" }

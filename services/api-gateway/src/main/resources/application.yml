@@ -1,0 +1,83 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins:
+              - "http://localhost:3000"
+            allowed-methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+            allowed-headers: "*"
+            allow-credentials: true
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20      # tokens added per second
+            redis-rate-limiter.burstCapacity: 40      # max burst
+            redis-rate-limiter.requestedTokens: 1
+            key-resolver: "#{@rateLimitKeyResolver}"
+      routes:
+        - id: identity-service
+          uri: ${IDENTITY_SERVICE_URI:lb://identity-service}
+          predicates:
+            - Path=/api/v1/auth/**,/api/v1/identity/**
+        - id: identity-service-docs
+          uri: ${IDENTITY_SERVICE_URI:lb://identity-service}
+          predicates:
+            - Path=/identity/v3/api-docs/**,/identity/swagger-ui/**
+          filters:
+            - RewritePath=/identity/(?<segment>.*), /$\{segment}
+        - id: learning-service
+          uri: ${LEARNING_SERVICE_URI:lb://learning-service}
+          predicates:
+            - Path=/api/v1/learning/**
+        - id: learning-service-docs
+          uri: ${LEARNING_SERVICE_URI:lb://learning-service}
+          predicates:
+            - Path=/learning/v3/api-docs/**,/learning/swagger-ui/**
+          filters:
+            - RewritePath=/learning/(?<segment>.*), /$\{segment}
+        - id: user-service
+          uri: ${USER_SERVICE_URI:http://localhost:9002}
+          predicates:
+            - Path=/api/v1/users/**,/api/v1/profiles/**
+
+app:
+  gateway:
+    security:
+      # Must match auth-service app.security.jwt.secret and issuer.
+      jwt-secret: ${JWT_SECRET:change-me-to-a-very-long-and-secure-development-secret-key}
+      jwt-issuer: it-shaharcha-auth
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.itshaharcha.gateway: INFO

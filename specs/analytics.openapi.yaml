@@ -1,0 +1,330 @@
+# Analytics service — "Track personal progress", "Participate in rankings",
+# "View analytics".
+#
+# The primary event CONSUMER: it subscribes to itsh.<service>.events on Kafka and
+# folds every DomainEvent into cross-domain progress, leaderboards, and dashboard
+# metrics. It also accepts the same events over REST (broker-less environments).
+#
+# Like every service it exposes the shared analytics read sub-API — but here that
+# sub-API answers from the AGGREGATED, cross-domain store rather than a single
+# domain. The extra paths below (ingest, progress, rankings, dashboards) are
+# unique to this service.
+#
+# Base path: /api/v1/analytics. It emits analytics.* events of its own
+# (milestone.reached, ranking.updated).
+openapi: 3.1.0
+info:
+  title: IT-Shaharcha — Analytics Service
+  version: 1.0.0
+  description: Event ingestion, cross-domain progress, rankings, and dashboards.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: /api/v1
+    description: Versioned platform base path (behind the gateway).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: ingest
+    description: Event ingestion (Kafka fallback over REST).
+  - name: progress
+    description: Cross-domain personal progress.
+  - name: rankings
+    description: Leaderboards and ranking participation.
+  - name: dashboards
+    description: Aggregated dashboard metrics.
+  - name: analytics
+    description: Uniform domain analytics read API (here, cross-domain).
+
+paths:
+  # ==========================================================================
+  # Ingestion — the REST fallback for the Kafka event bus.
+  # ==========================================================================
+  /analytics/events:ingest:
+    post:
+      operationId: ingestEvents
+      summary: Ingest one or more DomainEvents (REST fallback for Kafka).
+      description: >
+        Accepts the exact DomainEvent envelope carried on itsh.<service>.events.
+        Idempotent on eventId — re-delivering an event is a no-op. Intended for
+        environments without a broker, or for backfills/imports.
+      tags: [ingest]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "./shared/events.yaml#/components/schemas/DomainEvent"
+                - type: array
+                  items: { $ref: "./shared/events.yaml#/components/schemas/DomainEvent" }
+      responses:
+        "202":
+          description: Accepted for processing.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/IngestResult" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+
+  # ==========================================================================
+  # Cross-domain personal progress
+  # ==========================================================================
+  /analytics/progress:
+    get:
+      operationId: getMyProgress
+      summary: Cross-domain progress for an account (all domains rolled up).
+      tags: [progress]
+      parameters:
+        - $ref: "./shared/analytics-api.yaml#/components/parameters/AccountIdParam"
+        - $ref: "./shared/common.yaml#/components/parameters/FromParam"
+        - $ref: "./shared/common.yaml#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: The progress roll-up.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ProgressOverview" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+
+  /analytics/milestones:
+    get:
+      operationId: listMilestones
+      summary: Milestones reached by an account.
+      tags: [progress]
+      parameters:
+        - $ref: "./shared/analytics-api.yaml#/components/parameters/AccountIdParam"
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of milestones.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Milestone" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+
+  # ==========================================================================
+  # Rankings / leaderboards
+  # ==========================================================================
+  /analytics/rankings:
+    get:
+      operationId: getLeaderboard
+      summary: Leaderboard for a domain (or overall).
+      tags: [rankings]
+      security: []
+      parameters:
+        - name: domain
+          in: query
+          required: false
+          description: Restrict to one domain; omit for the overall board.
+          schema: { $ref: "./shared/events.yaml#/components/schemas/ServiceName" }
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all_time, monthly, weekly, daily]
+            default: all_time
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of leaderboard entries (ranked).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Leaderboard" }
+        "400": { $ref: "./shared/common.yaml#/components/responses/BadRequest" }
+
+  /analytics/rankings/me:
+    get:
+      operationId: getMyRank
+      summary: The caller's rank across the available boards.
+      tags: [rankings]
+      parameters:
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all_time, monthly, weekly, daily]
+            default: all_time
+      responses:
+        "200":
+          description: The caller's ranking entries.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/RankEntry" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+
+  # ==========================================================================
+  # Dashboards
+  # ==========================================================================
+  /analytics/dashboard:
+    get:
+      operationId: getDashboard
+      summary: Aggregated dashboard for an account (cross-domain metric series + summaries).
+      tags: [dashboards]
+      parameters:
+        - $ref: "./shared/analytics-api.yaml#/components/parameters/AccountIdParam"
+        - $ref: "./shared/analytics-api.yaml#/components/parameters/GranularityParam"
+        - $ref: "./shared/common.yaml#/components/parameters/FromParam"
+        - $ref: "./shared/common.yaml#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: The dashboard payload.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Dashboard" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+
+  # ==========================================================================
+  # Uniform analytics sub-API (here answers from the cross-domain store)
+  # ==========================================================================
+  /analytics/analytics/summary:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsSummary"
+  /analytics/analytics/activity:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsActivity"
+  /analytics/analytics/metrics:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsMetrics"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: "./shared/common.yaml#/components/securitySchemes/bearerAuth"
+
+  schemas:
+    IngestResult:
+      type: object
+      required: [received, accepted, duplicates]
+      properties:
+        received: { type: integer, minimum: 0, example: 50 }
+        accepted: { type: integer, minimum: 0, example: 48 }
+        duplicates: { type: integer, minimum: 0, description: Events skipped as already-seen eventIds., example: 1 }
+        rejected:
+          type: array
+          description: Events that failed validation, with reasons.
+          items:
+            type: object
+            properties:
+              eventId: { type: [string, "null"], format: uuid, example: "4e4e4e4e-4e4e-4e4e-4e4e-4e4e4e4e4e4e" }
+              reason: { type: string, example: "Unknown eventType" }
+
+    ProgressOverview:
+      type: object
+      required: [accountId, generatedAt, totalPoints, domains]
+      properties:
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        generatedAt: { type: string, format: date-time, example: "2026-05-29T10:15:00Z" }
+        totalPoints: { type: integer, minimum: 0, example: 4820 }
+        overallLevel: { type: [integer, "null"], minimum: 0, example: 7 }
+        streakDays: { type: [integer, "null"], minimum: 0, example: 12 }
+        domains:
+          type: array
+          description: Per-domain summaries (same shape every service emits).
+          items: { $ref: "./shared/analytics-api.yaml#/components/schemas/DomainAnalyticsSummary" }
+
+    Milestone:
+      allOf:
+        - $ref: "./shared/events.yaml#/components/schemas/MilestoneReachedData"
+        - type: object
+          required: [accountId, reachedAt]
+          properties:
+            accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+            reachedAt: { type: string, format: date-time, example: "2026-05-25T16:40:00Z" }
+
+    Leaderboard:
+      type: object
+      required: [period, entries]
+      properties:
+        domain: { $ref: "./shared/events.yaml#/components/schemas/ServiceName" }
+        period:
+          type: string
+          enum: [all_time, monthly, weekly, daily]
+          example: weekly
+        generatedAt: { type: string, format: date-time, example: "2026-05-29T10:15:00Z" }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/RankEntry" }
+        meta: { $ref: "./shared/common.yaml#/components/schemas/PageMeta" }
+
+    RankEntry:
+      type: object
+      required: [rank, accountId, points]
+      properties:
+        rank: { type: integer, minimum: 1, example: 3 }
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        username: { type: [string, "null"], example: "student" }
+        displayName: { type: [string, "null"], example: "Aziz Karimov" }
+        avatarUrl: { type: [string, "null"], format: uri, example: "https://cdn.itsh.dev/avatars/student.png" }
+        domain: { $ref: "./shared/events.yaml#/components/schemas/ServiceName" }
+        points: { type: integer, minimum: 0, example: 4820 }
+        level: { type: [integer, "null"], minimum: 0, example: 7 }
+        delta:
+          type: [integer, "null"]
+          description: Rank change since the previous period (positive = climbed).
+          example: 2
+
+    Dashboard:
+      type: object
+      required: [accountId, generatedAt, summaries, series]
+      properties:
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        generatedAt: { type: string, format: date-time, example: "2026-05-29T10:15:00Z" }
+        summaries:
+          type: array
+          description: One DomainAnalyticsSummary per domain.
+          items: { $ref: "./shared/analytics-api.yaml#/components/schemas/DomainAnalyticsSummary" }
+        series:
+          type: array
+          description: Cross-domain metric series for charting.
+          items: { $ref: "./shared/analytics-api.yaml#/components/schemas/MetricSeries" }
+        rank: { $ref: "#/components/schemas/RankEntry" }

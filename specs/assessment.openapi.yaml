@@ -1,0 +1,627 @@
+# Assessment service — "Prepare for IELTS", "Prepare for SAT", "Take real mock exams".
+#
+# Owns: the exam catalog (IELTS / SAT / mock / practice), exam sessions (start ->
+# answer -> submit), and scoring. Emits assessment.* events and exposes the shared
+# analytics read sub-API.
+#
+# Base path: /api/v1/assessment.
+openapi: 3.1.0
+info:
+  title: IT-Shaharcha — Assessment Service
+  version: 1.0.0
+  description: IELTS / SAT preparation, mock exams, submissions, and scoring.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: /api/v1
+    description: Versioned platform base path (behind the gateway).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: catalog
+    description: Exam catalog and prep material.
+  - name: sessions
+    description: Exam sessions — start, answer, submit.
+  - name: scoring
+    description: Scores and results.
+  - name: analytics
+    description: Uniform domain analytics read API.
+  - name: admin
+    description: Exam authoring (ROLE_ADMIN / ROLE_TEACHER).
+
+paths:
+  # ==========================================================================
+  # Catalog
+  # ==========================================================================
+  /assessment/exams:
+    get:
+      operationId: listExams
+      summary: List available exams.
+      tags: [catalog]
+      security: []
+      parameters:
+        - name: examType
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/ExamType" }
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: A page of exams.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Exam" }
+        "400": { $ref: "./shared/common.yaml#/components/responses/BadRequest" }
+
+  /assessment/exams/{examId}:
+    parameters:
+      - name: examId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getExam
+      summary: Get an exam with its section structure.
+      tags: [catalog]
+      security: []
+      responses:
+        "200":
+          description: The exam detail.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ExamDetail" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # Sessions
+  # ==========================================================================
+  /assessment/exams/{examId}:start:
+    parameters:
+      - name: examId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: startExam
+      summary: Start an exam session. Emits assessment.exam.started.
+      tags: [sessions]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      responses:
+        "201":
+          description: A new (or resumed) session.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ExamSession" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /assessment/sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getSession
+      summary: Get a session (caller's own).
+      tags: [sessions]
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ExamSession" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /assessment/sessions/{sessionId}/answers:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: saveAnswers
+      summary: Save/replace answers for the session (autosave-friendly, idempotent).
+      tags: [sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers:
+                  type: array
+                  items: { $ref: "#/components/schemas/Answer" }
+      responses:
+        "204": { description: Answers saved. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "409": { $ref: "./shared/common.yaml#/components/responses/Conflict" }
+
+  /assessment/sessions/{sessionId}:submit:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: submitExam
+      summary: >
+        Submit the session for scoring. Emits assessment.exam.submitted, then
+        assessment.exam.scored (and assessment.mock.completed for mock exams).
+      tags: [sessions]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                answers:
+                  type: array
+                  items: { $ref: "#/components/schemas/Answer" }
+      responses:
+        "200":
+          description: Submitted; result included if scored synchronously.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ExamResult" }
+        "202":
+          description: Submitted; scoring is asynchronous (poll the result endpoint).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ExamSession" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "409": { $ref: "./shared/common.yaml#/components/responses/Conflict" }
+
+  # ==========================================================================
+  # Scoring / results
+  # ==========================================================================
+  /assessment/sessions/{sessionId}/result:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getResult
+      summary: Get the scored result for a session.
+      tags: [scoring]
+      responses:
+        "200":
+          description: The result.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ExamResult" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /assessment/results:
+    get:
+      operationId: listMyResults
+      summary: List the caller's exam results.
+      tags: [scoring]
+      parameters:
+        - name: examType
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/ExamType" }
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+        - $ref: "./shared/common.yaml#/components/parameters/FromParam"
+        - $ref: "./shared/common.yaml#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: A page of results.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/ExamResult" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+
+  # ==========================================================================
+  # Uniform analytics sub-API (identical across every service)
+  # ==========================================================================
+  /assessment/analytics/summary:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsSummary"
+  /assessment/analytics/activity:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsActivity"
+  /assessment/analytics/metrics:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsMetrics"
+
+  # ==========================================================================
+  # Admin authoring (ROLE_ADMIN / ROLE_TEACHER). Powers the admin panel.
+  # Exams -> sections -> questions. Others get 403.
+  # ==========================================================================
+  /assessment/admin/exams:
+    post:
+      operationId: createExam
+      summary: Create an exam.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExamInput" }
+      responses:
+        "201": { $ref: "#/components/responses/ExamOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /assessment/admin/exams/{examId}:
+    parameters:
+      - name: examId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateExam
+      summary: Update an exam.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExamInput" }
+      responses:
+        "200": { $ref: "#/components/responses/ExamOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteExam
+      summary: Delete an exam.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /assessment/admin/exams/{examId}/sections:
+    parameters:
+      - name: examId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: createSection
+      summary: Add a section to an exam.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SectionInput" }
+      responses:
+        "201": { $ref: "#/components/responses/SectionOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /assessment/admin/sections/{sectionId}:
+    parameters:
+      - name: sectionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateSection
+      summary: Update a section.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SectionInput" }
+      responses:
+        "200": { $ref: "#/components/responses/SectionOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteSection
+      summary: Delete a section.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /assessment/admin/sections/{sectionId}/questions:
+    parameters:
+      - name: sectionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: createQuestion
+      summary: Add a question to a section.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestionInput" }
+      responses:
+        "201": { $ref: "#/components/responses/QuestionOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /assessment/admin/questions/{questionId}:
+    parameters:
+      - name: questionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateQuestion
+      summary: Update a question.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestionInput" }
+      responses:
+        "200": { $ref: "#/components/responses/QuestionOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteQuestion
+      summary: Delete a question.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: "./shared/common.yaml#/components/securitySchemes/bearerAuth"
+
+  schemas:
+    ExamType:
+      type: string
+      enum: [IELTS, SAT, MOCK, PRACTICE]
+
+    Exam:
+      type: object
+      required: [id, title, examType]
+      properties:
+        id: { type: string, format: uuid, example: "d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1" }
+        title: { type: string, example: "IELTS Academic — Full Mock 1" }
+        examType: { $ref: "#/components/schemas/ExamType" }
+        description: { type: [string, "null"], example: "Timed full-length IELTS Academic practice test." }
+        durationMinutes: { type: [integer, "null"], minimum: 0, example: 165 }
+        sectionCount: { type: integer, minimum: 0, example: 4 }
+        isRealExam:
+          type: boolean
+          default: false
+          description: True for proctored "real mock exams" vs. open practice.
+          example: true
+
+    ExamDetail:
+      allOf:
+        - $ref: "#/components/schemas/Exam"
+        - type: object
+          properties:
+            sections:
+              type: array
+              items: { $ref: "#/components/schemas/Section" }
+
+    Section:
+      type: object
+      required: [id, name, questionCount]
+      properties:
+        id: { type: string, format: uuid, example: "e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2" }
+        name: { type: string, example: "Reading" }
+        order: { type: integer, minimum: 0, example: 1 }
+        questionCount: { type: integer, minimum: 0, example: 40 }
+        durationMinutes: { type: [integer, "null"], minimum: 0, example: 60 }
+
+    ExamSession:
+      type: object
+      required: [id, examId, accountId, status, startedAt]
+      properties:
+        id: { type: string, format: uuid, example: "f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3" }
+        examId: { type: string, format: uuid, example: "d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1" }
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        status:
+          type: string
+          enum: [in_progress, submitted, scored, expired]
+          example: in_progress
+        startedAt: { type: string, format: date-time, example: "2026-05-29T09:00:00Z" }
+        expiresAt: { type: [string, "null"], format: date-time, example: "2026-05-29T11:45:00Z" }
+        submittedAt: { type: [string, "null"], format: date-time, example: null }
+
+    Answer:
+      type: object
+      required: [questionId, value]
+      properties:
+        questionId: { type: string, format: uuid, example: "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4" }
+        value:
+          description: Answer payload — choice id(s), text, or structured response.
+          example: "B"
+        sectionId: { type: [string, "null"], format: uuid, example: "e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2" }
+
+    ExamResult:
+      allOf:
+        - $ref: "./shared/events.yaml#/components/schemas/ExamScoredData"
+        - type: object
+          required: [sessionId, accountId, scoredAt]
+          properties:
+            sessionId: { type: string, format: uuid, example: "f3f3f3f3-f3f3-f3f3-f3f3-f3f3f3f3f3f3" }
+            accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+            scoredAt: { type: string, format: date-time, example: "2026-05-29T11:50:00Z" }
+            feedback: { type: [string, "null"], example: "Strong reading; improve time management in writing." }
+
+    # ----------------------------------------------------------------------
+    # Admin authoring.
+    # ----------------------------------------------------------------------
+    QuestionKind:
+      type: string
+      enum: [single_choice, multi_choice, true_false, short_text, essay]
+
+    Choice:
+      type: object
+      required: [id, text]
+      properties:
+        id: { type: string, example: "B" }
+        text: { type: string, example: "A compiled, statically typed language." }
+
+    Question:
+      allOf:
+        - $ref: "#/components/schemas/QuestionInput"
+        - type: object
+          required: [id, sectionId]
+          properties:
+            id: { type: string, format: uuid, example: "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4" }
+
+    ExamInput:
+      type: object
+      required: [title, examType]
+      properties:
+        title: { type: string, example: "IELTS Academic — Full Mock 1" }
+        examType: { $ref: "#/components/schemas/ExamType" }
+        description: { type: [string, "null"], example: "Timed full-length IELTS Academic practice test." }
+        durationMinutes: { type: [integer, "null"], minimum: 0, example: 165 }
+        isRealExam: { type: boolean, default: false, example: true }
+
+    SectionInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, example: "Reading" }
+        order: { type: [integer, "null"], minimum: 0, example: 1 }
+        durationMinutes: { type: [integer, "null"], minimum: 0, example: 60 }
+
+    QuestionInput:
+      type: object
+      required: [sectionId, prompt, kind]
+      properties:
+        sectionId: { type: string, format: uuid, example: "e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2" }
+        prompt: { type: string, example: "Which statement best describes the author's main argument?" }
+        kind: { $ref: "#/components/schemas/QuestionKind" }
+        order: { type: [integer, "null"], minimum: 0, example: 5 }
+        points: { type: number, minimum: 0, default: 1, example: 1 }
+        choices:
+          type: array
+          description: Present for choice questions; the option set.
+          items: { $ref: "#/components/schemas/Choice" }
+        correctAnswer:
+          description: >
+            Expected answer — choice id, array of choice ids, boolean, or text.
+            Omit/null for human-scored essays.
+          example: "B"
+        explanation: { type: [string, "null"], example: "Paragraph 3 states the author's central claim." }
+
+  # --------------------------------------------------------------------------
+  # Reusable typed success responses for admin authoring endpoints.
+  # --------------------------------------------------------------------------
+  responses:
+    ExamOk:
+      description: The exam.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Exam" }
+    SectionOk:
+      description: The section.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Section" }
+    QuestionOk:
+      description: The question.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Question" }

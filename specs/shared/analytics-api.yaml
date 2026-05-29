@@ -1,0 +1,287 @@
+# Identical analytics READ sub-API exposed by EVERY service.
+#
+# This is the contract behind the platform rule: "every service should expose
+# exactly the same api for analysis". Each service mounts these three read-only
+# paths under its own base path, e.g.:
+#
+#   identity   -> /api/v1/identity/analytics/{summary,activity,metrics}
+#   learning   -> /api/v1/learning/analytics/{summary,activity,metrics}
+#   assessment -> /api/v1/assessment/analytics/{summary,activity,metrics}
+#   portfolio  -> /api/v1/portfolio/analytics/{summary,activity,metrics}
+#   analytics  -> /api/v1/analytics/analytics/{summary,activity,metrics}  (self)
+#
+# A service spec pulls these in by $ref-ing the path items below, e.g.:
+#
+#   /analytics/summary:
+#     $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsSummary"
+#
+# Each service answers from ITS OWN domain data (the events it produced / the
+# state it owns). The dedicated `analytics` service additionally aggregates
+# across all domains — but it answers the very same three shapes, so a client
+# (or the analytics consumer) can call any service uniformly.
+#
+# Auth: same bearerAuth as everywhere. A caller may read their own analytics;
+# reading another account's analytics requires an elevated role (enforced by the
+# service, not encoded in the schema). The optional `accountId` query selects the
+# subject; when omitted the authenticated actor is used.
+openapi: 3.1.0
+info:
+  title: IT-Shaharcha — Shared Analytics Read API
+  version: 1.0.0
+  description: >
+    The uniform, read-only analytics sub-API every service exposes. Not a
+    deployable API on its own — service specs $ref the path items and schemas.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+paths: {}
+
+components:
+  # --------------------------------------------------------------------------
+  # Reusable parameters specific to the analytics sub-API.
+  # --------------------------------------------------------------------------
+  parameters:
+    AccountIdParam:
+      name: accountId
+      in: query
+      required: false
+      description: >
+        Subject account to report on. Omit to report on the authenticated actor.
+        Reporting on a different account requires an elevated role.
+      schema: { type: string, format: uuid }
+    GranularityParam:
+      name: granularity
+      in: query
+      required: false
+      description: Time bucket size for metric series.
+      schema:
+        type: string
+        enum: [hour, day, week, month]
+        default: day
+    MetricParam:
+      name: metric
+      in: query
+      required: false
+      description: >
+        Restrict the response to a single metric key (e.g. `lessons_completed`).
+        Omit to return every metric the service tracks.
+      schema: { type: string }
+
+  # --------------------------------------------------------------------------
+  # Path items — mounted verbatim by each service under its base path.
+  # --------------------------------------------------------------------------
+  pathItems:
+    AnalyticsSummary:
+      get:
+        operationId: getAnalyticsSummary
+        summary: Domain analytics summary for an account.
+        description: >
+          A compact roll-up of this service's domain for one account: headline
+          counters, last activity, and the current per-domain points/level. Cheap
+          enough to call on a dashboard load.
+        tags: [analytics]
+        security:
+          - bearerAuth: []
+        parameters:
+          - $ref: "#/components/parameters/AccountIdParam"
+          - $ref: "./common.yaml#/components/parameters/FromParam"
+          - $ref: "./common.yaml#/components/parameters/ToParam"
+        responses:
+          "200":
+            description: The domain summary.
+            content:
+              application/json:
+                schema:
+                  allOf:
+                    - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                    - type: object
+                      properties:
+                        data:
+                          $ref: "#/components/schemas/DomainAnalyticsSummary"
+          "401": { $ref: "./common.yaml#/components/responses/Unauthorized" }
+          "403": { $ref: "./common.yaml#/components/responses/Forbidden" }
+          "500": { $ref: "./common.yaml#/components/responses/InternalError" }
+
+    AnalyticsActivity:
+      get:
+        operationId: getAnalyticsActivity
+        summary: Recent domain activity feed for an account.
+        description: >
+          A reverse-chronological, paginated feed of the DomainEvents this service
+          produced for the account. Same envelope as the event bus carries, so a
+          consumer sees identical shapes whether it reads the feed or the topic.
+        tags: [analytics]
+        security:
+          - bearerAuth: []
+        parameters:
+          - $ref: "#/components/parameters/AccountIdParam"
+          - $ref: "./common.yaml#/components/parameters/FromParam"
+          - $ref: "./common.yaml#/components/parameters/ToParam"
+          - $ref: "./common.yaml#/components/parameters/PageParam"
+          - $ref: "./common.yaml#/components/parameters/SizeParam"
+          - $ref: "./common.yaml#/components/parameters/SortParam"
+        responses:
+          "200":
+            description: A page of domain events.
+            content:
+              application/json:
+                schema:
+                  allOf:
+                    - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                    - type: object
+                      properties:
+                        data:
+                          allOf:
+                            - $ref: "./common.yaml#/components/schemas/Page"
+                            - type: object
+                              properties:
+                                items:
+                                  type: array
+                                  items:
+                                    $ref: "./events.yaml#/components/schemas/DomainEvent"
+          "401": { $ref: "./common.yaml#/components/responses/Unauthorized" }
+          "403": { $ref: "./common.yaml#/components/responses/Forbidden" }
+          "500": { $ref: "./common.yaml#/components/responses/InternalError" }
+
+    AnalyticsMetrics:
+      get:
+        operationId: getAnalyticsMetrics
+        summary: Time-bucketed metric series for an account.
+        description: >
+          Numeric metric series for the account, bucketed by `granularity`. Use
+          `metric` to fetch a single series, or omit to get every metric the
+          service tracks. Powers charts on the progress / analytics dashboards.
+        tags: [analytics]
+        security:
+          - bearerAuth: []
+        parameters:
+          - $ref: "#/components/parameters/AccountIdParam"
+          - $ref: "#/components/parameters/MetricParam"
+          - $ref: "#/components/parameters/GranularityParam"
+          - $ref: "./common.yaml#/components/parameters/FromParam"
+          - $ref: "./common.yaml#/components/parameters/ToParam"
+        responses:
+          "200":
+            description: One or more metric series.
+            content:
+              application/json:
+                schema:
+                  allOf:
+                    - $ref: "./common.yaml#/components/schemas/ApiResponse"
+                    - type: object
+                      properties:
+                        data:
+                          $ref: "#/components/schemas/MetricSeriesSet"
+          "401": { $ref: "./common.yaml#/components/responses/Unauthorized" }
+          "403": { $ref: "./common.yaml#/components/responses/Forbidden" }
+          "500": { $ref: "./common.yaml#/components/responses/InternalError" }
+
+  # --------------------------------------------------------------------------
+  # Schemas — the uniform analytics shapes.
+  # --------------------------------------------------------------------------
+  schemas:
+    DomainAnalyticsSummary:
+      type: object
+      description: Compact per-domain roll-up for one account.
+      required: [accountId, domain, generatedAt, counters]
+      properties:
+        accountId: { type: string, format: uuid }
+        domain:
+          $ref: "./events.yaml#/components/schemas/ServiceName"
+        generatedAt:
+          type: string
+          format: date-time
+          description: When this summary was computed.
+        windowFrom:
+          type: [string, "null"]
+          format: date-time
+          description: Inclusive lower bound of the reported window, if any.
+        windowTo:
+          type: [string, "null"]
+          format: date-time
+          description: Exclusive upper bound of the reported window, if any.
+        lastActivityAt:
+          type: [string, "null"]
+          format: date-time
+          description: Timestamp of the most recent domain event for the account.
+        points:
+          type: integer
+          default: 0
+          description: Cumulative points earned in this domain (drives rankings).
+        level:
+          type: [integer, "null"]
+          minimum: 0
+          description: Current level in this domain, if the domain has levels.
+        counters:
+          type: object
+          description: >
+            Headline integer counters keyed by metric name. Keys are domain
+            specific, e.g. `lessons_completed`, `exams_scored`, `certificates`.
+          additionalProperties: { type: integer }
+        streakDays:
+          type: [integer, "null"]
+          minimum: 0
+          description: Consecutive-day activity streak, if the domain tracks it.
+      examples:
+        - accountId: "11111111-1111-1111-1111-111111111111"
+          domain: "learning"
+          generatedAt: "2026-05-29T10:30:00Z"
+          lastActivityAt: "2026-05-29T10:20:00Z"
+          points: 1240
+          level: 5
+          counters: { lessons_completed: 42, tutorials_watched: 13, typing_sessions: 7 }
+          streakDays: 9
+
+    MetricSeriesSet:
+      type: object
+      description: A set of named metric series sharing one time axis.
+      required: [accountId, domain, granularity, series]
+      properties:
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        domain:
+          $ref: "./events.yaml#/components/schemas/ServiceName"
+        granularity:
+          type: string
+          enum: [hour, day, week, month]
+          example: day
+        series:
+          type: array
+          items: { $ref: "#/components/schemas/MetricSeries" }
+
+    MetricSeries:
+      type: object
+      description: A single named metric as an ordered list of time buckets.
+      required: [metric, points]
+      properties:
+        metric:
+          type: string
+          description: Metric key, e.g. `lessons_completed`, `wpm_avg`.
+          example: lessons_completed
+        unit:
+          type: [string, "null"]
+          description: Optional unit hint, e.g. `count`, `seconds`, `percent`, `wpm`.
+          example: count
+        aggregation:
+          type: string
+          enum: [sum, avg, max, min, last, count]
+          default: sum
+          description: How raw events were reduced into each bucket value.
+          example: sum
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/MetricPoint" }
+
+    MetricPoint:
+      type: object
+      required: [t, v]
+      properties:
+        t:
+          type: string
+          format: date-time
+          description: Bucket start (inclusive), aligned to `granularity`.
+          example: "2026-05-28T00:00:00Z"
+        v:
+          type: number
+          description: Aggregated value for the bucket.
+          example: 3

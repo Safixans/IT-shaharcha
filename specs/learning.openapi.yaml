@@ -1,0 +1,1276 @@
+# Learning service — "Learn IT skills", "Watch tutorials", "Read programming
+# documentation/tutorials", "Practice typing".
+#
+# Owns: skill tracks -> courses -> modules -> lessons; tutorial videos; reading
+# docs; and typing practice sessions. Records learner progress and emits
+# learning.* events. Exposes the shared analytics read sub-API.
+#
+# Base path: /api/v1/learning.
+openapi: 3.1.0
+info:
+  title: IT-Shaharcha — Learning Service
+  version: 1.0.0
+  description: IT skill courses, tutorials, reading docs, and typing practice.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: /api/v1
+    description: Versioned platform base path (behind the gateway).
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: catalog
+    description: Skill tracks, courses, modules, lessons.
+  - name: enrollment
+    description: Enroll in courses and track lesson progress.
+  - name: tutorials
+    description: Tutorial videos and watch progress.
+  - name: docs
+    description: Programming documentation / reading material.
+  - name: typing
+    description: Typing practice sessions.
+  - name: analytics
+    description: Uniform domain analytics read API.
+  - name: admin
+    description: Content authoring & feeds (ROLE_ADMIN / ROLE_TEACHER).
+
+paths:
+  # ==========================================================================
+  # Catalog
+  # ==========================================================================
+  /learning/tracks:
+    get:
+      operationId: listTracks
+      summary: List skill tracks.
+      tags: [catalog]
+      security: []
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of tracks.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Track" }
+        "400": { $ref: "./shared/common.yaml#/components/responses/BadRequest" }
+
+  /learning/courses:
+    get:
+      operationId: listCourses
+      summary: List courses, optionally filtered by track.
+      tags: [catalog]
+      security: []
+      parameters:
+        - name: trackId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: level
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/Level" }
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: A page of courses.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Course" }
+        "400": { $ref: "./shared/common.yaml#/components/responses/BadRequest" }
+
+  /learning/courses/{courseId}:
+    parameters:
+      - name: courseId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCourse
+      summary: Get a course with its modules and lessons.
+      tags: [catalog]
+      security: []
+      responses:
+        "200":
+          description: The course detail.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CourseDetail" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # Enrollment & lesson progress
+  # ==========================================================================
+  /learning/courses/{courseId}:enroll:
+    parameters:
+      - name: courseId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: enrollCourse
+      summary: Enroll the caller in a course. Emits learning.course.enrolled.
+      tags: [enrollment]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      responses:
+        "200":
+          description: Enrollment (created or already present).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/Enrollment" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /learning/enrollments:
+    get:
+      operationId: listMyEnrollments
+      summary: List the caller's enrollments with progress.
+      tags: [enrollment]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of enrollments.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Enrollment" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+
+  /learning/lessons/{lessonId}:start:
+    parameters:
+      - name: lessonId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: startLesson
+      summary: Mark a lesson started. Emits learning.lesson.started.
+      tags: [enrollment]
+      responses:
+        "204": { description: Lesson start recorded. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /learning/lessons/{lessonId}:complete:
+    parameters:
+      - name: lessonId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: completeLesson
+      summary: Mark a lesson completed. Emits learning.lesson.completed.
+      tags: [enrollment]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./shared/events.yaml#/components/schemas/LessonCompletedData" }
+      responses:
+        "200":
+          description: Progress updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/LessonProgress" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+
+  # ==========================================================================
+  # Tutorials
+  # ==========================================================================
+  /learning/tutorials:
+    get:
+      operationId: listTutorials
+      summary: List tutorial videos.
+      tags: [tutorials]
+      security: []
+      parameters:
+        - name: topic
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of tutorials.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Tutorial" }
+        "400": { $ref: "./shared/common.yaml#/components/responses/BadRequest" }
+
+  /learning/tutorials/{tutorialId}:watched:
+    parameters:
+      - name: tutorialId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: recordTutorialWatched
+      summary: Record tutorial watch progress. Emits learning.tutorial.watched.
+      tags: [tutorials]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [watchedSeconds]
+              properties:
+                watchedSeconds: { type: integer, minimum: 0 }
+                positionSeconds: { type: integer, minimum: 0 }
+                completed: { type: boolean, default: false }
+      responses:
+        "204": { description: Watch progress recorded. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # Docs / reading
+  # ==========================================================================
+  /learning/docs:
+    get:
+      operationId: listDocs
+      summary: List programming documentation / reading material.
+      tags: [docs]
+      security: []
+      parameters:
+        - name: topic
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of docs.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/Doc" }
+        "400": { $ref: "./shared/common.yaml#/components/responses/BadRequest" }
+
+  /learning/docs/{docId}:read:
+    parameters:
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: recordDocRead
+      summary: Record that a doc was read. Emits learning.doc.read.
+      tags: [docs]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                durationSeconds: { type: integer, minimum: 0 }
+                scrollPercent: { type: number, minimum: 0, maximum: 100 }
+      responses:
+        "204": { description: Read recorded. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # ==========================================================================
+  # Typing practice
+  # ==========================================================================
+  /learning/typing/lessons:
+    get:
+      operationId: listTypingLessons
+      summary: List typing practice lessons.
+      tags: [typing]
+      security: []
+      parameters:
+        - name: difficulty
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/Level" }
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of typing lessons.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/TypingLesson" }
+        "400": { $ref: "./shared/common.yaml#/components/responses/BadRequest" }
+
+  /learning/typing/sessions:
+    post:
+      operationId: submitTypingSession
+      summary: Submit a completed typing session. Emits learning.typing.session.completed.
+      tags: [typing]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./shared/events.yaml#/components/schemas/TypingSessionCompletedData" }
+      responses:
+        "201":
+          description: Session recorded.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/TypingSession" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    get:
+      operationId: listMyTypingSessions
+      summary: List the caller's typing sessions.
+      tags: [typing]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+        - $ref: "./shared/common.yaml#/components/parameters/FromParam"
+        - $ref: "./shared/common.yaml#/components/parameters/ToParam"
+      responses:
+        "200":
+          description: A page of sessions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/TypingSession" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+
+  # ==========================================================================
+  # Uniform analytics sub-API (identical across every service)
+  # ==========================================================================
+  /learning/analytics/summary:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsSummary"
+  /learning/analytics/activity:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsActivity"
+  /learning/analytics/metrics:
+    $ref: "./shared/analytics-api.yaml#/components/pathItems/AnalyticsMetrics"
+
+  # ==========================================================================
+  # Admin authoring (ROLE_ADMIN / ROLE_TEACHER). Powers the admin panel.
+  # All endpoints require an elevated role; others get 403.
+  # ==========================================================================
+  /learning/admin/tracks:
+    post:
+      operationId: createTrack
+      summary: Create a skill track.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrackInput" }
+      responses:
+        "201": { $ref: "#/components/responses/TrackCreated" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/tracks/{trackId}:
+    parameters:
+      - name: trackId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateTrack
+      summary: Update a track.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrackInput" }
+      responses:
+        "200": { $ref: "#/components/responses/TrackOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteTrack
+      summary: Delete a track.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "409": { $ref: "./shared/common.yaml#/components/responses/Conflict" }
+
+  /learning/admin/courses:
+    post:
+      operationId: createCourse
+      summary: Create a course.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseInput" }
+      responses:
+        "201": { $ref: "#/components/responses/CourseCreated" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/courses/{courseId}:
+    parameters:
+      - name: courseId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateCourse
+      summary: Update a course.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourseInput" }
+      responses:
+        "200": { $ref: "#/components/responses/CourseOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteCourse
+      summary: Delete a course.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /learning/admin/modules:
+    post:
+      operationId: createModule
+      summary: Create a module within a course.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModuleInput" }
+      responses:
+        "201": { $ref: "#/components/responses/ModuleOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/modules/{moduleId}:
+    parameters:
+      - name: moduleId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateModule
+      summary: Update a module.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModuleInput" }
+      responses:
+        "200": { $ref: "#/components/responses/ModuleOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteModule
+      summary: Delete a module.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /learning/admin/lessons:
+    post:
+      operationId: createLesson
+      summary: Create a lesson within a module.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LessonInput" }
+      responses:
+        "201": { $ref: "#/components/responses/LessonOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/lessons/{lessonId}:
+    parameters:
+      - name: lessonId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateLesson
+      summary: Update a lesson.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LessonInput" }
+      responses:
+        "200": { $ref: "#/components/responses/LessonOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteLesson
+      summary: Delete a lesson.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /learning/admin/tutorials:
+    post:
+      operationId: createTutorial
+      summary: Add a tutorial video.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TutorialInput" }
+      responses:
+        "201": { $ref: "#/components/responses/TutorialOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/tutorials/{tutorialId}:
+    parameters:
+      - name: tutorialId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateTutorial
+      summary: Update a tutorial.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TutorialInput" }
+      responses:
+        "200": { $ref: "#/components/responses/TutorialOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteTutorial
+      summary: Delete a tutorial.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /learning/admin/docs:
+    post:
+      operationId: createDoc
+      summary: Add a documentation / reading entry.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocInput" }
+      responses:
+        "201": { $ref: "#/components/responses/DocOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/docs/{docId}:
+    parameters:
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateDoc
+      summary: Update a doc.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DocInput" }
+      responses:
+        "200": { $ref: "#/components/responses/DocOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteDoc
+      summary: Delete a doc.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  /learning/admin/typing/lessons:
+    post:
+      operationId: createTypingLesson
+      summary: Add a typing practice lesson.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TypingLessonInput" }
+      responses:
+        "201": { $ref: "#/components/responses/TypingLessonOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/typing/lessons/{lessonId}:
+    parameters:
+      - name: lessonId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateTypingLesson
+      summary: Update a typing lesson.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TypingLessonInput" }
+      responses:
+        "200": { $ref: "#/components/responses/TypingLessonOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteTypingLesson
+      summary: Delete a typing lesson.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
+  # --------------------------------------------------------------------------
+  # External content sources (feeds) — admins register a source that syncs
+  # tutorials/docs in automatically (RSS, YouTube channel, sitemap, API).
+  # --------------------------------------------------------------------------
+  /learning/admin/sources:
+    get:
+      operationId: listContentSources
+      summary: List registered content sources.
+      tags: [admin]
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/SourceType" }
+        - $ref: "./shared/common.yaml#/components/parameters/PageParam"
+        - $ref: "./shared/common.yaml#/components/parameters/SizeParam"
+      responses:
+        "200":
+          description: A page of content sources.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "./shared/common.yaml#/components/schemas/Page"
+                          - type: object
+                            properties:
+                              items:
+                                type: array
+                                items: { $ref: "#/components/schemas/ContentSource" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+    post:
+      operationId: createContentSource
+      summary: Register a content source.
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContentSourceInput" }
+      responses:
+        "201": { $ref: "#/components/responses/ContentSourceOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+  /learning/admin/sources/{sourceId}:
+    parameters:
+      - name: sourceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getContentSource
+      summary: Get a content source.
+      tags: [admin]
+      responses:
+        "200": { $ref: "#/components/responses/ContentSourceOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+    patch:
+      operationId: updateContentSource
+      summary: Update a content source (e.g. enable/disable, change schedule).
+      tags: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ContentSourceInput" }
+      responses:
+        "200": { $ref: "#/components/responses/ContentSourceOk" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "422": { $ref: "./shared/common.yaml#/components/responses/ValidationFailed" }
+    delete:
+      operationId: deleteContentSource
+      summary: Delete a content source.
+      tags: [admin]
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+  /learning/admin/sources/{sourceId}:sync:
+    parameters:
+      - name: sourceId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: syncContentSource
+      summary: Trigger an immediate sync of a content source.
+      tags: [admin]
+      parameters:
+        - $ref: "./shared/common.yaml#/components/parameters/IdempotencyKeyHeader"
+      responses:
+        "202":
+          description: Sync started.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/SourceSyncRun" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+        "409": { $ref: "./shared/common.yaml#/components/responses/Conflict" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: "./shared/common.yaml#/components/securitySchemes/bearerAuth"
+
+  schemas:
+    Level:
+      type: string
+      enum: [beginner, intermediate, advanced]
+
+    Track:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: string, format: uuid, example: "33333333-3333-3333-3333-333333333333" }
+        title: { type: string, example: "Web Development" }
+        slug: { type: string, example: "web-development" }
+        description: { type: [string, "null"], example: "From HTML basics to full-stack apps." }
+        courseCount: { type: integer, minimum: 0, example: 12 }
+
+    Course:
+      type: object
+      required: [id, title, level]
+      properties:
+        id: { type: string, format: uuid, example: "44444444-4444-4444-4444-444444444444" }
+        trackId: { type: [string, "null"], format: uuid, example: "33333333-3333-3333-3333-333333333333" }
+        title: { type: string, example: "JavaScript Fundamentals" }
+        slug: { type: string, example: "javascript-fundamentals" }
+        summary: { type: [string, "null"], example: "Variables, functions, and the DOM." }
+        level: { $ref: "#/components/schemas/Level" }
+        lessonCount: { type: integer, minimum: 0, example: 24 }
+        estimatedMinutes: { type: [integer, "null"], minimum: 0, example: 480 }
+
+    CourseDetail:
+      allOf:
+        - $ref: "#/components/schemas/Course"
+        - type: object
+          properties:
+            modules:
+              type: array
+              items: { $ref: "#/components/schemas/Module" }
+
+    Module:
+      type: object
+      required: [id, title, lessons]
+      properties:
+        id: { type: string, format: uuid, example: "55555555-5555-5555-5555-555555555555" }
+        title: { type: string, example: "Functions & Scope" }
+        order: { type: integer, minimum: 0, example: 2 }
+        lessons:
+          type: array
+          items: { $ref: "#/components/schemas/Lesson" }
+
+    Lesson:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: string, format: uuid, example: "66666666-6666-6666-6666-666666666666" }
+        title: { type: string, example: "Arrow Functions" }
+        order: { type: integer, minimum: 0, example: 3 }
+        kind:
+          type: string
+          enum: [reading, video, exercise, quiz]
+          default: reading
+          example: video
+        estimatedMinutes: { type: [integer, "null"], minimum: 0, example: 15 }
+
+    Enrollment:
+      type: object
+      required: [id, courseId, accountId, status, enrolledAt]
+      properties:
+        id: { type: string, format: uuid, example: "77777777-7777-7777-7777-777777777777" }
+        courseId: { type: string, format: uuid, example: "44444444-4444-4444-4444-444444444444" }
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        status:
+          type: string
+          enum: [active, completed, dropped]
+          example: active
+        progressPercent: { type: number, minimum: 0, maximum: 100, default: 0, example: 42.5 }
+        enrolledAt: { type: string, format: date-time, example: "2026-05-20T08:00:00Z" }
+        completedAt: { type: [string, "null"], format: date-time, example: null }
+
+    LessonProgress:
+      type: object
+      required: [lessonId, courseId, accountId, completed]
+      properties:
+        lessonId: { type: string, format: uuid, example: "66666666-6666-6666-6666-666666666666" }
+        courseId: { type: string, format: uuid, example: "44444444-4444-4444-4444-444444444444" }
+        accountId: { type: string, format: uuid, example: "11111111-1111-1111-1111-111111111111" }
+        completed: { type: boolean, example: true }
+        scorePercent: { type: [number, "null"], minimum: 0, maximum: 100, example: 95 }
+        courseProgressPercent: { type: number, minimum: 0, maximum: 100, example: 50 }
+        completedAt: { type: [string, "null"], format: date-time, example: "2026-05-28T14:30:00Z" }
+
+    Tutorial:
+      type: object
+      required: [id, title, videoUrl]
+      properties:
+        id: { type: string, format: uuid, example: "88888888-8888-8888-8888-888888888888" }
+        title: { type: string, example: "Building a REST API in Node.js" }
+        topic: { type: [string, "null"], example: "backend" }
+        videoUrl: { type: string, format: uri, example: "https://videos.itsh.dev/rest-api-node.mp4" }
+        durationSeconds: { type: [integer, "null"], minimum: 0, example: 1320 }
+        thumbnailUrl: { type: [string, "null"], format: uri, example: "https://cdn.itsh.dev/thumbs/rest-api-node.jpg" }
+
+    Doc:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: string, format: uuid, example: "99999999-9999-9999-9999-999999999999" }
+        title: { type: string, example: "HTTP Status Codes Reference" }
+        topic: { type: [string, "null"], example: "web" }
+        url: { type: [string, "null"], format: uri, example: "https://docs.itsh.dev/http-status-codes" }
+        estimatedMinutes: { type: [integer, "null"], minimum: 0, example: 8 }
+
+    TypingLesson:
+      type: object
+      required: [id, title, text]
+      properties:
+        id: { type: string, format: uuid, example: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }
+        title: { type: string, example: "Home Row Drill" }
+        difficulty: { $ref: "#/components/schemas/Level" }
+        text: { type: string, description: The prompt text to type., example: "the quick brown fox jumps over the lazy dog" }
+
+    TypingSession:
+      allOf:
+        - $ref: "./shared/events.yaml#/components/schemas/TypingSessionCompletedData"
+        - type: object
+          required: [id, accountId, createdAt]
+          properties:
+            id: { type: string, format: uuid }
+            accountId: { type: string, format: uuid }
+            createdAt: { type: string, format: date-time }
+
+    # ----------------------------------------------------------------------
+    # Admin authoring input bodies. PATCH treats every field as optional;
+    # POST enforces the listed `required` fields server-side.
+    # ----------------------------------------------------------------------
+    TrackInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, example: "Web Development" }
+        slug: { type: [string, "null"], example: "web-development" }
+        description: { type: [string, "null"], example: "From HTML basics to full-stack apps." }
+
+    CourseInput:
+      type: object
+      required: [title, level]
+      properties:
+        trackId: { type: [string, "null"], format: uuid, example: "33333333-3333-3333-3333-333333333333" }
+        title: { type: string, example: "JavaScript Fundamentals" }
+        slug: { type: [string, "null"], example: "javascript-fundamentals" }
+        summary: { type: [string, "null"], example: "Variables, functions, and the DOM." }
+        level: { $ref: "#/components/schemas/Level" }
+        estimatedMinutes: { type: [integer, "null"], minimum: 0, example: 480 }
+
+    ModuleInput:
+      type: object
+      required: [courseId, title]
+      properties:
+        courseId: { type: string, format: uuid, example: "44444444-4444-4444-4444-444444444444" }
+        title: { type: string, example: "Functions & Scope" }
+        order: { type: [integer, "null"], minimum: 0, example: 2 }
+
+    LessonInput:
+      type: object
+      required: [moduleId, title]
+      properties:
+        moduleId: { type: string, format: uuid, example: "55555555-5555-5555-5555-555555555555" }
+        title: { type: string, example: "Arrow Functions" }
+        order: { type: [integer, "null"], minimum: 0, example: 3 }
+        kind:
+          type: string
+          enum: [reading, video, exercise, quiz]
+          default: reading
+          example: video
+        estimatedMinutes: { type: [integer, "null"], minimum: 0, example: 15 }
+        body: { type: [string, "null"], description: Lesson content (markdown)., example: "# Arrow Functions\n\nArrow functions provide a concise syntax..." }
+
+    TutorialInput:
+      type: object
+      required: [title, videoUrl]
+      properties:
+        title: { type: string, example: "Building a REST API in Node.js" }
+        topic: { type: [string, "null"], example: "backend" }
+        videoUrl: { type: string, format: uri, example: "https://videos.itsh.dev/rest-api-node.mp4" }
+        durationSeconds: { type: [integer, "null"], minimum: 0, example: 1320 }
+        thumbnailUrl: { type: [string, "null"], format: uri, example: "https://cdn.itsh.dev/thumbs/rest-api-node.jpg" }
+        sourceId:
+          type: [string, "null"]
+          format: uuid
+          description: Owning content source, if ingested from a feed.
+          example: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    DocInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, example: "HTTP Status Codes Reference" }
+        topic: { type: [string, "null"], example: "web" }
+        url: { type: [string, "null"], format: uri, example: "https://docs.itsh.dev/http-status-codes" }
+        body: { type: [string, "null"], description: Inline doc content (markdown)., example: "## 2xx Success\n\n200 OK — the request succeeded." }
+        estimatedMinutes: { type: [integer, "null"], minimum: 0, example: 8 }
+        sourceId: { type: [string, "null"], format: uuid, example: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" }
+
+    TypingLessonInput:
+      type: object
+      required: [title, text]
+      properties:
+        title: { type: string, example: "Home Row Drill" }
+        difficulty: { $ref: "#/components/schemas/Level" }
+        text: { type: string, example: "the quick brown fox jumps over the lazy dog" }
+
+    # ----------------------------------------------------------------------
+    # External content sources (feeds).
+    # ----------------------------------------------------------------------
+    SourceType:
+      type: string
+      enum: [rss, youtube, sitemap, api, manual]
+
+    SourceTarget:
+      type: string
+      description: Which catalog the source populates.
+      enum: [tutorials, docs]
+
+    SourceStatus:
+      type: string
+      enum: [active, paused, error]
+
+    ContentSourceInput:
+      type: object
+      required: [name, type, target, url]
+      properties:
+        name: { type: string, example: "freeCodeCamp YouTube" }
+        type: { $ref: "#/components/schemas/SourceType" }
+        target: { $ref: "#/components/schemas/SourceTarget" }
+        url: { type: string, format: uri, description: Feed/endpoint URL to poll., example: "https://www.youtube.com/feeds/videos.xml?channel_id=UC8butISFwT-Wl7EV0hUK0BQ" }
+        enabled: { type: boolean, default: true, example: true }
+        schedule:
+          type: [string, "null"]
+          description: Cron expression for periodic sync; null = manual only.
+          example: "0 6 * * *"
+        defaultTopic:
+          type: [string, "null"]
+          description: Topic tag applied to items ingested from this source.
+          example: "frontend"
+
+    ContentSource:
+      allOf:
+        - $ref: "#/components/schemas/ContentSourceInput"
+        - type: object
+          required: [id, status, createdAt]
+          properties:
+            id: { type: string, format: uuid, example: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" }
+            status: { $ref: "#/components/schemas/SourceStatus" }
+            createdAt: { type: string, format: date-time, example: "2026-05-01T09:00:00Z" }
+            lastSyncedAt: { type: [string, "null"], format: date-time, example: "2026-05-29T06:00:00Z" }
+            lastError: { type: [string, "null"], example: null }
+            itemCount:
+              type: integer
+              minimum: 0
+              default: 0
+              description: Items currently ingested from this source.
+              example: 134
+
+    SourceSyncRun:
+      type: object
+      required: [sourceId, runId, status]
+      properties:
+        sourceId: { type: string, format: uuid, example: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" }
+        runId: { type: string, format: uuid, example: "cccccccc-cccc-cccc-cccc-cccccccccccc" }
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+          example: queued
+        startedAt: { type: [string, "null"], format: date-time, example: "2026-05-29T10:15:00Z" }
+        itemsImported: { type: [integer, "null"], minimum: 0, example: null }
+
+  # --------------------------------------------------------------------------
+  # Reusable typed success responses for the admin authoring endpoints.
+  # --------------------------------------------------------------------------
+  responses:
+    TrackCreated: &trackBody
+      description: The track.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Track" }
+    TrackOk: *trackBody
+    CourseCreated: &courseBody
+      description: The course.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Course" }
+    CourseOk: *courseBody
+    ModuleOk:
+      description: The module.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Module" }
+    LessonOk:
+      description: The lesson.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Lesson" }
+    TutorialOk:
+      description: The tutorial.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Tutorial" }
+    DocOk:
+      description: The doc.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Doc" }
+    TypingLessonOk:
+      description: The typing lesson.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/TypingLesson" }
+    ContentSourceOk:
+      description: The content source.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/ContentSource" }

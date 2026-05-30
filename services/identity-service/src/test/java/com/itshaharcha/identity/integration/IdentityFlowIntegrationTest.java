@@ -1,10 +1,10 @@
 package com.itshaharcha.identity.integration;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -31,8 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.events.kafka-enabled=false",
         "eureka.client.enabled=false",
         "spring.autoconfigure.exclude="
-                + "org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.security.oauth2.client.servlet.OAuth2ClientAutoConfiguration",
+                + "org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration,"
+                + "org.springframework.boot.security.oauth2.client.autoconfigure.OAuth2ClientAutoConfiguration",
         "app.security.jwt.secret=integration-test-secret-key-that-is-long-enough-32+"
 })
 @AutoConfigureMockMvc
@@ -54,7 +54,7 @@ class IdentityFlowIntegrationTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired private JsonMapper objectMapper;
 
     @Test
     void register_login_me_refresh_logout_happyPath() throws Exception {
@@ -80,8 +80,8 @@ class IdentityFlowIntegrationTest {
 
         JsonNode loginData = objectMapper.readTree(loginResult.getResponse().getContentAsString())
                 .get("data");
-        String accessToken = loginData.get("accessToken").asText();
-        String refreshToken = loginData.get("refreshToken").asText();
+        String accessToken = loginData.get("accessToken").asString();
+        String refreshToken = loginData.get("refreshToken").asString();
 
         // ---- /identity/me with the access token ----
         mockMvc.perform(get("/api/v1/identity/me")
@@ -99,7 +99,7 @@ class IdentityFlowIntegrationTest {
                 .andReturn();
 
         String newRefresh = objectMapper.readTree(refreshResult.getResponse().getContentAsString())
-                .get("data").get("refreshToken").asText();
+                .get("data").get("refreshToken").asString();
         assertThat(newRefresh).isNotEqualTo(refreshToken); // rotated
 
         // ---- the old refresh token is now revoked ----
@@ -162,7 +162,7 @@ class IdentityFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         String accessToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
-                .get("data").get("accessToken").asText();
+                .get("data").get("accessToken").asString();
 
         mockMvc.perform(get("/api/v1/identity/accounts")
                         .header("Authorization", "Bearer " + accessToken))

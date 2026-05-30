@@ -1,0 +1,82 @@
+server:
+  port: 9005
+
+spring:
+  application:
+    name: assessment-service
+
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/assessment_db}
+    username: ${DB_USERNAME:itsh}
+    password: ${DB_PASSWORD:itsh_secret}
+    hikari:
+      pool-name: assessment-pool
+      maximum-pool-size: 10
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+        format_sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+app:
+  events:
+    # Set true (and run a broker) to publish domain events to Kafka.
+    kafka-enabled: ${KAFKA_ENABLED:false}
+  security:
+    jwt:
+      # Assessment validates (does not mint) tokens; secret + issuer MUST match the
+      # values identity-service signs with. >= 32 bytes for HS256.
+      secret: ${JWT_SECRET:change-me-to-a-very-long-and-secure-development-secret-key}
+      issuer: it-shaharcha-auth
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.itshaharcha.assessment: INFO
+    # Logbook emits HTTP request/response logs at TRACE.
+    org.zalando.logbook: ${LOGBOOK_LEVEL:TRACE}

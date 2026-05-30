@@ -1,0 +1,18 @@
+# Scrapes the Micrometer/Actuator Prometheus endpoints exposed by every service.
+# Targets are resolved on the compose network (service name : container port).
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: itsh-services
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - eureka-server:8761
+          - identity-service:9003
+          - learning-service:9004
+          - assessment-service:9005
+          - portfolio-service:9006
+          - analytics-service:9007
+          - api-gateway:8080

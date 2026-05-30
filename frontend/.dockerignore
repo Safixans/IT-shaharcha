@@ -1,0 +1,8 @@
+# Never copy host artifacts into the build context — node_modules holds platform-specific
+# native binaries (swc/esbuild) that won't run in the linux image; .next is rebuilt.
+node_modules
+**/node_modules
+.next
+**/.next
+**/*.tsbuildinfo
+.env*.local

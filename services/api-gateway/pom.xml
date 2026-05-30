@@ -16,9 +16,11 @@
     <description>Edge API gateway — routing, JWT validation, rate limiting</description>
 
     <dependencies>
+        <!-- Reactive (WebFlux) gateway. Renamed from spring-cloud-starter-gateway in the
+             2025.x train; the gateway stays reactive (best fit for an edge proxy). -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-gateway</artifactId>
+            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
         </dependency>
         <!-- Service discovery: resolve lb:// routes via the Eureka registry -->
         <dependency>
@@ -33,6 +35,29 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Observability: distributed tracing (Zipkin via OTel), Prometheus metrics,
+             structured JSON logging (Logstash), and HTTP logging (Logbook, reactive). -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-zipkin</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.zalando</groupId>
+            <artifactId>logbook-spring-boot-starter</artifactId>
         </dependency>
 
         <!-- JWT verification at the edge -->

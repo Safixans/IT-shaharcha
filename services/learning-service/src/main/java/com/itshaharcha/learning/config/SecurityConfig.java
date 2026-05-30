@@ -1,6 +1,6 @@
 package com.itshaharcha.learning.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.itshaharcha.common.exception.ErrorCode;
 import com.itshaharcha.common.web.ErrorResponse;
 import com.itshaharcha.learning.security.JwtAuthenticationFilter;
@@ -43,7 +43,7 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {

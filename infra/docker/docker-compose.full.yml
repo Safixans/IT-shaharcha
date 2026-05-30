@@ -1,13 +1,21 @@
 name: it-shaharcha
 
-# Runs the full backend stack from prebuilt jars.
-# Prerequisite: build the jars first from the repo root:  mvn clean install -DskipTests
-# Then:  docker compose -f infra/docker/docker-compose.full.yml up -d
+# Runs the FULL stack: backend (from prebuilt jars), Kafka event bus, observability
+# (Zipkin + Prometheus), and the three frontend apps (built in-image).
 #
-# Jars are mounted (not baked) so rebuilds are instant: re-run mvn, then
-#   docker compose -f infra/docker/docker-compose.full.yml restart auth-service user-service api-gateway
+# 1) Build the backend jars from the repo root:   mvn clean install -DskipTests
+# 2) Bring everything up:                          docker compose -f infra/docker/docker-compose.full.yml up -d --build
+# 3) Seed staff + a student so you can log in:
+#      docker compose -f infra/docker/docker-compose.full.yml exec -T postgres psql -U itsh -d identity_db < infra/docker/seed-admin.sql
+#      docker compose -f infra/docker/docker-compose.full.yml exec -T postgres psql -U itsh -d identity_db < infra/docker/seed-auth.sql
+#
+# Backend jars are mounted (not baked) so rebuilds are instant: re-run mvn, then
+#   docker compose -f infra/docker/docker-compose.full.yml restart identity-service ...
+# Frontend apps are built into their images; re-run with --build after changing them.
 
 x-jwt-secret: &jwt-secret "change-me-to-a-very-long-and-secure-development-secret-key"
+x-zipkin: &zipkin-endpoint "http://zipkin:9411/api/v2/spans"
+x-kafka-bootstrap: &kafka-bootstrap "kafka:9092"
 
 services:
   postgres:
@@ -40,12 +48,63 @@ services:
       timeout: 5s
       retries: 10
 
+  # ---- Event bus (Confluent Kafka, KRaft — no ZooKeeper) ----
+  # Two listeners: PLAINTEXT (kafka:9092) for the compose network, PLAINTEXT_HOST
+  # (localhost:29092) for tools on the host. Single-node so all replication factors
+  # are pinned to 1 — the usual cause of a broker that "starts but never serves".
+  kafka:
+    image: confluentinc/cp-kafka:7.8.0
+    container_name: itsh-kafka
+    ports:
+      - "9092:9092"     # in-network PLAINTEXT (advertised as kafka:9092)
+      - "29092:29092"   # host access (advertised as localhost:29092)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Required for KRaft single-node: the image auto-formats storage with this id.
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+
+  # ---- Observability ----
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: itsh-zipkin
+    ports:
+      - "9411:9411"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: itsh-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  # ---- Service discovery ----
   eureka-server:
     image: eclipse-temurin:25-jre-alpine
     container_name: itsh-eureka
     working_dir: /app
     environment:
       EUREKA_HOSTNAME: eureka-server
+      ZIPKIN_ENDPOINT: *zipkin-endpoint
     volumes:
       - ../../services/eureka-server/target/eureka-server.jar:/app/app.jar:ro
     command: ["java", "-jar", "/app/app.jar"]
@@ -57,25 +116,7 @@ services:
       timeout: 5s
       retries: 20
 
-  auth-service:
-    image: eclipse-temurin:25-jre-alpine
-    container_name: itsh-auth
-    working_dir: /app
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_URL: jdbc:postgresql://postgres:5432/auth_db
-      DB_USERNAME: itsh
-      DB_PASSWORD: itsh_secret
-      JWT_SECRET: *jwt-secret
-      AUTH_AUTO_ACTIVATE: "true"   # DEV: skip OTP so the UI flow is smooth
-    volumes:
-      - ../../services/auth-service/target/auth-service.jar:/app/app.jar:ro
-    command: ["java", "-jar", "/app/app.jar"]
-    ports:
-      - "9001:9001"
-
+  # ---- Business services ----
   identity-service:
     image: eclipse-temurin:25-jre-alpine
     container_name: itsh-identity
@@ -85,6 +126,8 @@ services:
         condition: service_healthy
       eureka-server:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/identity_db
       DB_USERNAME: itsh
@@ -92,6 +135,9 @@ services:
       JWT_SECRET: *jwt-secret
       AUTH_AUTO_ACTIVATE: "true"   # DEV: skip OTP so the UI flow is smooth
       EUREKA_URL: http://eureka-server:8761/eureka/
+      ZIPKIN_ENDPOINT: *zipkin-endpoint
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP: *kafka-bootstrap
     volumes:
       - ../../services/identity-service/target/identity-service.jar:/app/app.jar:ro
     command: ["java", "-jar", "/app/app.jar"]
@@ -107,34 +153,101 @@ services:
         condition: service_healthy
       eureka-server:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/learning_db
       DB_USERNAME: itsh
       DB_PASSWORD: itsh_secret
       JWT_SECRET: *jwt-secret
       EUREKA_URL: http://eureka-server:8761/eureka/
+      ZIPKIN_ENDPOINT: *zipkin-endpoint
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP: *kafka-bootstrap
     volumes:
       - ../../services/learning-service/target/learning-service.jar:/app/app.jar:ro
     command: ["java", "-jar", "/app/app.jar"]
     ports:
       - "9004:9004"
 
-  user-service:
+  assessment-service:
     image: eclipse-temurin:25-jre-alpine
-    container_name: itsh-user
+    container_name: itsh-assessment
     working_dir: /app
     depends_on:
       postgres:
         condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/users_db
+      DB_URL: jdbc:postgresql://postgres:5432/assessment_db
       DB_USERNAME: itsh
       DB_PASSWORD: itsh_secret
+      JWT_SECRET: *jwt-secret
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      ZIPKIN_ENDPOINT: *zipkin-endpoint
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP: *kafka-bootstrap
     volumes:
-      - ../../services/user-service/target/user-service.jar:/app/app.jar:ro
+      - ../../services/assessment-service/target/assessment-service.jar:/app/app.jar:ro
     command: ["java", "-jar", "/app/app.jar"]
     ports:
-      - "9002:9002"
+      - "9005:9005"
+
+  portfolio-service:
+    image: eclipse-temurin:25-jre-alpine
+    container_name: itsh-portfolio
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/portfolio_db
+      DB_USERNAME: itsh
+      DB_PASSWORD: itsh_secret
+      JWT_SECRET: *jwt-secret
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      ZIPKIN_ENDPOINT: *zipkin-endpoint
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP: *kafka-bootstrap
+    volumes:
+      - ../../services/portfolio-service/target/portfolio-service.jar:/app/app.jar:ro
+    command: ["java", "-jar", "/app/app.jar"]
+    ports:
+      - "9006:9006"
+
+  analytics-service:
+    image: eclipse-temurin:25-jre-alpine
+    container_name: itsh-analytics
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/analytics_db
+      DB_USERNAME: itsh
+      DB_PASSWORD: itsh_secret
+      JWT_SECRET: *jwt-secret
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      ZIPKIN_ENDPOINT: *zipkin-endpoint
+      # Analytics is the primary event consumer — subscribes to itsh.<service>.events.
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP: *kafka-bootstrap
+    volumes:
+      - ../../services/analytics-service/target/analytics-service.jar:/app/app.jar:ro
+    command: ["java", "-jar", "/app/app.jar"]
+    ports:
+      - "9007:9007"
 
   api-gateway:
     image: eclipse-temurin:25-jre-alpine
@@ -149,20 +262,69 @@ services:
         condition: service_started
       learning-service:
         condition: service_started
-      user-service:
+      assessment-service:
+        condition: service_started
+      portfolio-service:
+        condition: service_started
+      analytics-service:
         condition: service_started
     environment:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      # identity-service and learning-service are resolved via Eureka (lb:// routes).
-      USER_SERVICE_URI: http://user-service:9002
+      # Business services are resolved via Eureka (lb:// routes).
       EUREKA_URL: http://eureka-server:8761/eureka/
       JWT_SECRET: *jwt-secret
+      ZIPKIN_ENDPOINT: *zipkin-endpoint
     volumes:
       - ../../services/api-gateway/target/api-gateway.jar:/app/app.jar:ro
     command: ["java", "-jar", "/app/app.jar"]
     ports:
       - "8080:8080"
 
+  # ---- Frontend apps (built in-image from the npm workspace) ----
+  public-web:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        APP: public
+    container_name: itsh-public
+    depends_on:
+      - api-gateway
+    environment:
+      # The Next server proxies /api/* to the gateway on the compose network.
+      GATEWAY_URL: http://api-gateway:8080
+    ports:
+      - "3002:3002"
+
+  console-web:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        APP: console
+    container_name: itsh-console
+    depends_on:
+      - api-gateway
+    environment:
+      GATEWAY_URL: http://api-gateway:8080
+    ports:
+      - "3001:3001"
+
+  learner-web:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        APP: learner
+    container_name: itsh-learner
+    depends_on:
+      - api-gateway
+    environment:
+      GATEWAY_URL: http://api-gateway:8080
+    ports:
+      - "3000:3000"
+
 volumes:
   pgdata:
+  kafkadata:

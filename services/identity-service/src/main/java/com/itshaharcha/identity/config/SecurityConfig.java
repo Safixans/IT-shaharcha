@@ -1,6 +1,6 @@
 package com.itshaharcha.identity.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.itshaharcha.identity.security.JwtAuthenticationFilter;
 import com.itshaharcha.common.exception.ErrorCode;
 import com.itshaharcha.common.web.ErrorResponse;
@@ -30,6 +30,7 @@ public class SecurityConfig {
             "/api/v1/auth/register",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
+            "/api/v1/auth/logout",
             "/api/v1/auth/verify",
             "/api/v1/auth/otp:resend",
             "/v3/api-docs/**",
@@ -39,7 +40,7 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {

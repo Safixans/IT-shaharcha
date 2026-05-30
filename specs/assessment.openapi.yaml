@@ -176,6 +176,35 @@ paths:
         "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
         "409": { $ref: "./shared/common.yaml#/components/responses/Conflict" }
 
+  /assessment/sessions/{sessionId}/questions:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getSessionQuestions
+      summary: >
+        List the questions for the session WITHOUT correct answers — lets a client
+        re-fetch the in-progress exam after a page refresh or reconnect.
+      tags: [sessions]
+      responses:
+        "200":
+          description: The session's questions (answers withheld).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "./shared/common.yaml#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/SessionQuestion" }
+        "401": { $ref: "./shared/common.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./shared/common.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./shared/common.yaml#/components/responses/NotFound" }
+
   /assessment/sessions/{sessionId}:submit:
     parameters:
       - name: sessionId
@@ -552,6 +581,24 @@ components:
           required: [id, sectionId]
           properties:
             id: { type: string, format: uuid, example: "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4" }
+
+    SessionQuestion:
+      type: object
+      description: >
+        A question as presented to a candidate during a live session — the same
+        shape as Question but with the correct answer and explanation withheld.
+      required: [id, sectionId, prompt, kind]
+      properties:
+        id: { type: string, format: uuid, example: "a4a4a4a4-a4a4-a4a4-a4a4-a4a4a4a4a4a4" }
+        sectionId: { type: string, format: uuid, example: "e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2" }
+        prompt: { type: string, example: "Which statement best describes the author's main argument?" }
+        kind: { $ref: "#/components/schemas/QuestionKind" }
+        order: { type: [integer, "null"], minimum: 0, example: 5 }
+        points: { type: number, minimum: 0, default: 1, example: 1 }
+        choices:
+          type: array
+          description: Present for choice questions; the option set.
+          items: { $ref: "#/components/schemas/Choice" }
 
     ExamInput:
       type: object

@@ -34,6 +34,10 @@ public record GatewaySecurityProperties(
                     "/api/v1/learning/tutorials",
                     "/api/v1/learning/docs",
                     "/api/v1/learning/typing/lessons",
+                    // Published portfolios are viewable by handle without auth (spec security: []).
+                    "/api/v1/portfolio/public/*",
+                    // Public leaderboard (spec marks /analytics/rankings security: []).
+                    "/api/v1/analytics/rankings",
                     "/oauth2/**",
                     "/login/oauth2/**",
                     "/*/v3/api-docs/**",

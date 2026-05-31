@@ -14,7 +14,6 @@ export default function CoursePage({ params }: { params: Promise<{ courseId: str
   const { courseId } = use(params);
   const [course, setCourse] = useState<CourseDetail | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
-  const [done, setDone] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -38,8 +37,7 @@ export default function CoursePage({ params }: { params: Promise<{ courseId: str
     setBusy(true);
     setError(null);
     try {
-      const e = await api.enroll(courseId);
-      setEnrollment(e);
+      setEnrollment(await api.enroll(courseId));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not enroll.");
     } finally {
@@ -47,21 +45,7 @@ export default function CoursePage({ params }: { params: Promise<{ courseId: str
     }
   }
 
-  async function complete(lessonId: string, moduleId: string, minutes: number | null) {
-    setError(null);
-    try {
-      const p = await api.completeLesson(lessonId, {
-        courseId,
-        moduleId,
-        durationSeconds: (minutes ?? 1) * 60,
-        scorePercent: 100,
-      });
-      setDone((s) => new Set(s).add(lessonId));
-      setEnrollment((e) => (e ? { ...e, progressPercent: p.courseProgressPercent } : e));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not record completion.");
-    }
-  }
+  const firstLessonId = course?.modules.flatMap((m) => m.lessons)[0]?.id;
 
   if (course === null && !error) return <Loading />;
 
@@ -85,16 +69,33 @@ export default function CoursePage({ params }: { params: Promise<{ courseId: str
               <p className="text-sm font-medium text-slate-700">
                 {enrollment.status === "completed" ? "Completed 🎉" : "Your progress"}
               </p>
-              <span className="text-sm text-slate-500">{Math.round(enrollment.progressPercent)}%</span>
+              <span className="text-sm font-semibold text-slate-500">
+                {Math.round(enrollment.progressPercent)}%
+              </span>
             </div>
             <ProgressBar percent={enrollment.progressPercent} />
+            {firstLessonId && (
+              <Link
+                href={`/learn/courses/${courseId}/lessons/${firstLessonId}`}
+                className="btn-primary mt-4"
+              >
+                {enrollment.progressPercent > 0 ? "Continue learning" : "Start first lesson"}
+              </Link>
+            )}
           </>
         ) : (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-600">Enroll to track your progress.</p>
-            <button className="btn-primary" onClick={enroll} disabled={busy}>
-              {busy ? "Enrolling…" : "Enroll"}
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-slate-600">Enroll to track your progress through this course.</p>
+            <div className="flex gap-2">
+              {firstLessonId && (
+                <Link href={`/learn/courses/${courseId}/lessons/${firstLessonId}`} className="btn-ghost">
+                  Preview
+                </Link>
+              )}
+              <button className="btn-primary" onClick={enroll} disabled={busy}>
+                {busy ? "Enrolling…" : "Enroll"}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -103,32 +104,32 @@ export default function CoursePage({ params }: { params: Promise<{ courseId: str
         {course?.modules.length === 0 && (
           <div className="card text-sm text-slate-400">No lessons yet.</div>
         )}
-        {course?.modules.map((m) => (
+        {course?.modules.map((m, mi) => (
           <div key={m.id} className="card">
-            <p className="font-medium text-slate-900">{m.title}</p>
-            <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
-              {m.lessons.map((l) => {
-                const isDone = done.has(l.id);
-                return (
-                  <li key={l.id} className="flex items-center justify-between py-2 text-sm">
-                    <span className="text-slate-700">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="grid h-6 w-6 place-items-center rounded-md bg-brand-50 text-xs font-bold text-brand-700">
+                {mi + 1}
+              </span>
+              <p className="font-semibold text-slate-900">{m.title}</p>
+            </div>
+            <ul className="divide-y divide-slate-100 border-t border-slate-100">
+              {m.lessons.map((l) => (
+                <li key={l.id}>
+                  <Link
+                    href={`/learn/courses/${courseId}/lessons/${l.id}`}
+                    className="group flex items-center justify-between gap-3 py-2.5 text-sm"
+                  >
+                    <span className="flex items-center gap-2 text-slate-700 group-hover:text-brand-700">
                       {l.title}
-                      {l.kind && <span className="ml-2 text-xs text-slate-400">{l.kind}</span>}
+                      {l.kind && <span className="badge-slate">{l.kind}</span>}
                     </span>
-                    {enrollment ? (
-                      isDone ? (
-                        <span className="badge bg-emerald-100 text-emerald-700">done</span>
-                      ) : (
-                        <button className="btn-ghost btn-sm" onClick={() => complete(l.id, m.id, l.estimatedMinutes)}>
-                          Mark complete
-                        </button>
-                      )
-                    ) : (
-                      <span className="text-xs text-slate-400">enroll to start</span>
-                    )}
-                  </li>
-                );
-              })}
+                    <span className="flex items-center gap-3 text-xs text-slate-400">
+                      {l.estimatedMinutes != null && <span>{l.estimatedMinutes} min</span>}
+                      <span className="text-slate-300 group-hover:text-brand-500">→</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
         ))}

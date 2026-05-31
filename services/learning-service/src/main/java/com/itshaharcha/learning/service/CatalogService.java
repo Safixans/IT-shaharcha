@@ -6,6 +6,7 @@ import com.itshaharcha.learning.dto.request.ModuleInput;
 import com.itshaharcha.learning.dto.request.TrackInput;
 import com.itshaharcha.learning.dto.response.CourseDetailResponse;
 import com.itshaharcha.learning.dto.response.CourseResponse;
+import com.itshaharcha.learning.dto.response.LessonDetailResponse;
 import com.itshaharcha.learning.dto.response.LessonResponse;
 import com.itshaharcha.learning.dto.response.ModuleResponse;
 import com.itshaharcha.learning.dto.response.PageResponse;
@@ -22,6 +23,8 @@ public interface CatalogService {
     PageResponse<CourseResponse> listCourses(UUID trackId, Level level, Pageable pageable);
 
     CourseDetailResponse getCourse(UUID courseId);
+
+    LessonDetailResponse getLesson(UUID lessonId);
 
     TrackResponse createTrack(TrackInput input);
 

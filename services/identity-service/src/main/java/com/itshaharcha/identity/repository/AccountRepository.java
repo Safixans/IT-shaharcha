@@ -26,9 +26,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     @Query("""
             select a from Account a
             where (:status is null or a.status = :status)
-              and (:q is null
-                   or lower(a.username) like lower(concat('%', :q, '%'))
-                   or lower(a.email) like lower(concat('%', :q, '%')))
+              and (cast(:q as string) is null
+                   or lower(a.username) like lower(concat('%', cast(:q as string), '%'))
+                   or lower(a.email) like lower(concat('%', cast(:q as string), '%')))
             """)
     Page<Account> search(@Param("status") AccountStatus status,
                          @Param("q") String q,

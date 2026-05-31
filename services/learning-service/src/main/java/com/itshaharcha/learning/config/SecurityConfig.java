@@ -30,6 +30,9 @@ public class SecurityConfig {
             "/api/v1/learning/tracks",
             "/api/v1/learning/courses",
             "/api/v1/learning/courses/*",
+            "/api/v1/learning/lessons/*",
+            "/api/v1/learning/roadmaps",
+            "/api/v1/learning/roadmaps/*",
             "/api/v1/learning/tutorials",
             "/api/v1/learning/docs",
             "/api/v1/learning/typing/lessons"

@@ -28,6 +28,9 @@
       ],
       "@itsh/api-client": [
         "../../packages/api-client/src/index.ts"
+      ],
+      "@itsh/roadmap": [
+        "../../packages/roadmap/src/index.ts"
       ]
     }
   },

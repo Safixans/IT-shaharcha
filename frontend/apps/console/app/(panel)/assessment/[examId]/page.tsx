@@ -134,6 +134,33 @@ function SectionCard({
   const [correct, setCorrect] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState(section.content ?? "");
+  const [pdfUrl, setPdfUrl] = useState(section.pdfUrl ?? "");
+  const [savingMaterial, setSavingMaterial] = useState(false);
+
+  async function saveMaterial(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingMaterial(true);
+    try {
+      await api.updateSection(section.id, {
+        name: section.name,
+        order: section.order,
+        durationMinutes: section.durationMinutes ?? undefined,
+        content: content.trim() || undefined,
+        pdfUrl: pdfUrl.trim() || undefined,
+      });
+      setEditing(false);
+      onChange();
+    } catch (err) {
+      onError(err);
+    } finally {
+      setSavingMaterial(false);
+    }
+  }
+
+  const hasMaterial = Boolean(section.content || section.pdfUrl);
+
   async function addQuestion(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -172,6 +199,9 @@ function SectionCard({
           </p>
         </div>
         <div className="flex gap-2">
+          <button className="btn-ghost btn-sm" onClick={() => setEditing((v) => !v)}>
+            {editing ? "Close" : hasMaterial ? "Edit material" : "Add material"}
+          </button>
           <button className="btn-ghost btn-sm" onClick={() => setOpen((v) => !v)}>
             {open ? "Close" : "Add question"}
           </button>
@@ -182,6 +212,38 @@ function SectionCard({
           )}
         </div>
       </div>
+
+      {hasMaterial && !editing && (
+        <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          {section.content && <p className="line-clamp-2 whitespace-pre-wrap">{section.content}</p>}
+          {section.pdfUrl && <p className="mt-1 truncate font-medium text-brand-600">PDF: {section.pdfUrl}</p>}
+        </div>
+      )}
+
+      {editing && (
+        <form onSubmit={saveMaterial} className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+          <Field label="Reading material / information" hint="Shown to the test-taker before the questions. Plain text — paste a passage or instructions.">
+            <textarea
+              className="input min-h-32"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="e.g. Read the passage below and answer the questions that follow…"
+            />
+          </Field>
+          <Field label="PDF URL (optional)" hint="A link to a PDF — embedded inline for the test-taker, no download needed.">
+            <input
+              className="input"
+              type="url"
+              value={pdfUrl}
+              onChange={(e) => setPdfUrl(e.target.value)}
+              placeholder="https://…/reading.pdf"
+            />
+          </Field>
+          <button className="btn-primary" disabled={savingMaterial}>
+            {savingMaterial ? "Saving…" : "Save material"}
+          </button>
+        </form>
+      )}
 
       {open && (
         <form onSubmit={addQuestion} className="mt-4 space-y-3 border-t border-slate-100 pt-4">

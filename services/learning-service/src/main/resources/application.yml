@@ -29,6 +29,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Lesson bodies contain ${...} (JS template literals, shell snippets); don't
+    # let Flyway treat those as migration placeholders.
+    placeholder-replacement: false
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}

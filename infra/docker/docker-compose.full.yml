@@ -136,8 +136,11 @@ services:
       AUTH_AUTO_ACTIVATE: "true"   # DEV: skip OTP so the UI flow is smooth
       EUREKA_URL: http://eureka-server:8761/eureka/
       ZIPKIN_ENDPOINT: *zipkin-endpoint
-      KAFKA_ENABLED: "true"
+      KAFKA_ENABLED: "false"
       KAFKA_BOOTSTRAP: *kafka-bootstrap
+      # Placeholder so OAuth2ClientProperties validation passes; Google login unused in dev.
+      GOOGLE_CLIENT_ID: "dev-disabled"
+      GOOGLE_CLIENT_SECRET: "dev-disabled"
     volumes:
       - ../../services/identity-service/target/identity-service.jar:/app/app.jar:ro
     command: ["java", "-jar", "/app/app.jar"]
@@ -162,7 +165,7 @@ services:
       JWT_SECRET: *jwt-secret
       EUREKA_URL: http://eureka-server:8761/eureka/
       ZIPKIN_ENDPOINT: *zipkin-endpoint
-      KAFKA_ENABLED: "true"
+      KAFKA_ENABLED: "false"
       KAFKA_BOOTSTRAP: *kafka-bootstrap
     volumes:
       - ../../services/learning-service/target/learning-service.jar:/app/app.jar:ro
@@ -188,7 +191,7 @@ services:
       JWT_SECRET: *jwt-secret
       EUREKA_URL: http://eureka-server:8761/eureka/
       ZIPKIN_ENDPOINT: *zipkin-endpoint
-      KAFKA_ENABLED: "true"
+      KAFKA_ENABLED: "false"
       KAFKA_BOOTSTRAP: *kafka-bootstrap
     volumes:
       - ../../services/assessment-service/target/assessment-service.jar:/app/app.jar:ro
@@ -214,7 +217,7 @@ services:
       JWT_SECRET: *jwt-secret
       EUREKA_URL: http://eureka-server:8761/eureka/
       ZIPKIN_ENDPOINT: *zipkin-endpoint
-      KAFKA_ENABLED: "true"
+      KAFKA_ENABLED: "false"
       KAFKA_BOOTSTRAP: *kafka-bootstrap
     volumes:
       - ../../services/portfolio-service/target/portfolio-service.jar:/app/app.jar:ro
@@ -241,7 +244,7 @@ services:
       EUREKA_URL: http://eureka-server:8761/eureka/
       ZIPKIN_ENDPOINT: *zipkin-endpoint
       # Analytics is the primary event consumer — subscribes to itsh.<service>.events.
-      KAFKA_ENABLED: "true"
+      KAFKA_ENABLED: "false"
       KAFKA_BOOTSTRAP: *kafka-bootstrap
     volumes:
       - ../../services/analytics-service/target/analytics-service.jar:/app/app.jar:ro

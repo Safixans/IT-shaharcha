@@ -119,6 +119,8 @@ public class AdminServiceImpl implements AdminService {
             section.setOrderIndex(input.order());
         }
         section.setDurationMinutes(input.durationMinutes());
+        section.setContent(input.content());
+        section.setPdfUrl(input.pdfUrl());
     }
 
     private void applyQuestion(Question question, QuestionInput input) {

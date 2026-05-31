@@ -7,6 +7,7 @@ import com.itshaharcha.learning.dto.request.ModuleInput;
 import com.itshaharcha.learning.dto.request.TrackInput;
 import com.itshaharcha.learning.dto.response.CourseDetailResponse;
 import com.itshaharcha.learning.dto.response.CourseResponse;
+import com.itshaharcha.learning.dto.response.LessonDetailResponse;
 import com.itshaharcha.learning.dto.response.LessonResponse;
 import com.itshaharcha.learning.dto.response.ModuleResponse;
 import com.itshaharcha.learning.dto.response.PageResponse;
@@ -69,6 +70,12 @@ public class CatalogServiceImpl implements CatalogService {
                 .toList();
         int lessonCount = (int) lessonRepository.countByCourseId(courseId);
         return mapper.toCourseDetail(course, lessonCount, modules);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public LessonDetailResponse getLesson(UUID lessonId) {
+        return mapper.toLessonDetail(requireLesson(lessonId));
     }
 
     private List<LessonResponse> lessonsOf(UUID moduleId) {

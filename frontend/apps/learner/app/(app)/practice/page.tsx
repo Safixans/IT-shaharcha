@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, type Doc, type Tutorial, type TypingLesson } from "@itsh/api-client";
 import { Loading, PageHeader } from "../../../components/ui";
 import { TypingTest } from "../../../components/TypingTest";
+import { TypingArena } from "../../../components/TypingArena";
 
 export default function PracticePage() {
   const [tutorials, setTutorials] = useState<Tutorial[]>([]);
@@ -46,6 +47,11 @@ export default function PracticePage() {
   return (
     <>
       <PageHeader title="Practice" description="Watch tutorials, read docs, and drill your typing." />
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold text-slate-900">Typing speed test</h2>
+        <TypingArena />
+      </section>
 
       <section className="mb-8">
         <h2 className="mb-3 text-lg font-semibold text-slate-900">Tutorials</h2>

@@ -37,9 +37,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
+      <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200/80 bg-white">
         <div className="flex items-center gap-2 px-5 py-4 font-semibold">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-gradient text-sm font-bold text-white shadow-soft">
             IT
           </span>
           Console
@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 key={n.href}
                 href={n.href}
-                className={`block rounded-lg px-3 py-2 text-sm font-medium ${
+                className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                   active ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"
                 }`}
               >

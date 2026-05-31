@@ -8,6 +8,7 @@ import {
   type Answer,
   type ExamDetail,
   type ExamResult,
+  type Section,
   type SessionQuestion,
 } from "@itsh/api-client";
 import { ErrorBanner, Loading, PageHeader } from "../../../../components/ui";
@@ -89,6 +90,11 @@ export default function TakeExamPage({ params }: { params: Promise<{ examId: str
 
       {phase === "taking" && (
         <div className="space-y-4">
+          {exam?.sections
+            .filter((s) => s.content || s.pdfUrl)
+            .map((s) => (
+              <SectionMaterial key={s.id} section={s} />
+            ))}
           {questions.length === 0 && (
             <div className="card text-sm text-slate-400">This exam has no questions yet.</div>
           )}
@@ -134,6 +140,24 @@ export default function TakeExamPage({ params }: { params: Promise<{ examId: str
         </div>
       )}
     </>
+  );
+}
+
+function SectionMaterial({ section }: { section: Section }) {
+  return (
+    <div className="card border-brand-100 bg-brand-50/30">
+      <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">{section.name}</p>
+      {section.content && (
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{section.content}</p>
+      )}
+      {section.pdfUrl && (
+        <iframe
+          src={section.pdfUrl}
+          title={`${section.name} material`}
+          className="mt-3 h-[28rem] w-full rounded-lg border border-slate-200 bg-white"
+        />
+      )}
+    </div>
   );
 }
 

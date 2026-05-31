@@ -10,6 +10,11 @@ WORKDIR /app
 ARG APP
 ENV APP=${APP}
 ENV NEXT_TELEMETRY_DISABLED=1
+# Next bakes the /api/* rewrite destination into the route manifest at build time,
+# so the gateway URL must be set here (not just at runtime). On the compose network
+# the gateway is reachable as api-gateway:8080; the hostname resolves at request time.
+ARG GATEWAY_URL=http://api-gateway:8080
+ENV GATEWAY_URL=${GATEWAY_URL}
 
 # Install the whole workspace (shared packages + the chosen app), then build that app.
 COPY package.json package-lock.json ./

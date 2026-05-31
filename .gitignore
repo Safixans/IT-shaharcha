@@ -34,6 +34,9 @@ out/
 .DS_Store
 Thumbs.db
 
+# Claude Code local runtime
+.claude/
+
 # Secrets / keys
 *.pem
 *.key

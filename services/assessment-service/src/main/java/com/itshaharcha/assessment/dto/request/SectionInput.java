@@ -6,5 +6,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 public record SectionInput(
         @NotBlank String name,
         @PositiveOrZero Integer order,
-        @PositiveOrZero Integer durationMinutes) {
+        @PositiveOrZero Integer durationMinutes,
+        String content,
+        String pdfUrl) {
 }

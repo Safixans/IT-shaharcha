@@ -21,7 +21,12 @@ export function PageHeader({
 }
 
 export function Loading({ label = "Loading…" }: { label?: string }) {
-  return <p className="py-8 text-center text-sm text-slate-400">{label}</p>;
+  return (
+    <div className="flex items-center justify-center gap-3 py-12 text-sm text-slate-400">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-brand-500" />
+      {label}
+    </div>
+  );
 }
 
 export function ErrorBanner({ message }: { message: string }) {

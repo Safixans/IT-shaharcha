@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       "@itsh/auth": fileURLToPath(new URL("../../packages/auth/src/index.ts", import.meta.url)),
       "@itsh/api-client": fileURLToPath(new URL("../../packages/api-client/src/index.ts", import.meta.url)),
+      "@itsh/roadmap": fileURLToPath(new URL("../../packages/roadmap/src/index.ts", import.meta.url)),
     },
   },
   test: {

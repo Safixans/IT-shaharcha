@@ -5,6 +5,7 @@ import com.itshaharcha.learning.dto.response.CourseDetailResponse;
 import com.itshaharcha.learning.dto.response.CourseResponse;
 import com.itshaharcha.learning.dto.response.DocResponse;
 import com.itshaharcha.learning.dto.response.EnrollmentResponse;
+import com.itshaharcha.learning.dto.response.LessonDetailResponse;
 import com.itshaharcha.learning.dto.response.LessonProgressResponse;
 import com.itshaharcha.learning.dto.response.LessonResponse;
 import com.itshaharcha.learning.dto.response.ModuleResponse;
@@ -44,6 +45,9 @@ public interface LearningMapper {
 
     @Mapping(target = "order", source = "orderIndex")
     LessonResponse toLessonResponse(Lesson lesson);
+
+    @Mapping(target = "order", source = "orderIndex")
+    LessonDetailResponse toLessonDetail(Lesson lesson);
 
     EnrollmentResponse toEnrollmentResponse(Enrollment enrollment);
 

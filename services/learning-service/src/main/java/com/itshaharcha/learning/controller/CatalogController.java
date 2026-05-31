@@ -3,6 +3,7 @@ package com.itshaharcha.learning.controller;
 import com.itshaharcha.common.web.ApiResponse;
 import com.itshaharcha.learning.dto.response.CourseDetailResponse;
 import com.itshaharcha.learning.dto.response.CourseResponse;
+import com.itshaharcha.learning.dto.response.LessonDetailResponse;
 import com.itshaharcha.learning.dto.response.PageResponse;
 import com.itshaharcha.learning.dto.response.TrackResponse;
 import com.itshaharcha.learning.entity.Level;
@@ -49,5 +50,11 @@ public class CatalogController {
     @GetMapping("/courses/{courseId}")
     public ApiResponse<CourseDetailResponse> getCourse(@PathVariable UUID courseId) {
         return ApiResponse.ok(catalogService.getCourse(courseId));
+    }
+
+    @Operation(summary = "Get a single lesson with its full body")
+    @GetMapping("/lessons/{lessonId}")
+    public ApiResponse<LessonDetailResponse> getLesson(@PathVariable UUID lessonId) {
+        return ApiResponse.ok(catalogService.getLesson(lessonId));
     }
 }

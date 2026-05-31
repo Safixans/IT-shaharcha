@@ -12,74 +12,76 @@ spring:
 
   cloud:
     gateway:
-      globalcors:
-        cors-configurations:
-          '[/**]':
-            allowed-origins:
-              - "http://localhost:3000"   # learner app
-              - "http://localhost:3001"   # console app
-              - "http://localhost:3002"   # public app
-            allowed-methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-            allowed-headers: "*"
-            allow-credentials: true
-      default-filters:
-        - name: RequestRateLimiter
-          args:
-            redis-rate-limiter.replenishRate: 20      # tokens added per second
-            redis-rate-limiter.burstCapacity: 40      # max burst
-            redis-rate-limiter.requestedTokens: 1
-            key-resolver: "#{@rateLimitKeyResolver}"
-      routes:
-        - id: identity-service
-          uri: ${IDENTITY_SERVICE_URI:lb://identity-service}
-          predicates:
-            - Path=/api/v1/auth/**,/api/v1/identity/**
-        - id: identity-service-docs
-          uri: ${IDENTITY_SERVICE_URI:lb://identity-service}
-          predicates:
-            - Path=/identity/v3/api-docs/**,/identity/swagger-ui/**
-          filters:
-            - RewritePath=/identity/(?<segment>.*), /$\{segment}
-        - id: learning-service
-          uri: ${LEARNING_SERVICE_URI:lb://learning-service}
-          predicates:
-            - Path=/api/v1/learning/**
-        - id: learning-service-docs
-          uri: ${LEARNING_SERVICE_URI:lb://learning-service}
-          predicates:
-            - Path=/learning/v3/api-docs/**,/learning/swagger-ui/**
-          filters:
-            - RewritePath=/learning/(?<segment>.*), /$\{segment}
-        - id: assessment-service
-          uri: ${ASSESSMENT_SERVICE_URI:lb://assessment-service}
-          predicates:
-            - Path=/api/v1/assessment/**
-        - id: assessment-service-docs
-          uri: ${ASSESSMENT_SERVICE_URI:lb://assessment-service}
-          predicates:
-            - Path=/assessment/v3/api-docs/**,/assessment/swagger-ui/**
-          filters:
-            - RewritePath=/assessment/(?<segment>.*), /$\{segment}
-        - id: portfolio-service
-          uri: ${PORTFOLIO_SERVICE_URI:lb://portfolio-service}
-          predicates:
-            - Path=/api/v1/portfolio/**
-        - id: portfolio-service-docs
-          uri: ${PORTFOLIO_SERVICE_URI:lb://portfolio-service}
-          predicates:
-            - Path=/portfolio/v3/api-docs/**,/portfolio/swagger-ui/**
-          filters:
-            - RewritePath=/portfolio/(?<segment>.*), /$\{segment}
-        - id: analytics-service
-          uri: ${ANALYTICS_SERVICE_URI:lb://analytics-service}
-          predicates:
-            - Path=/api/v1/analytics/**
-        - id: analytics-service-docs
-          uri: ${ANALYTICS_SERVICE_URI:lb://analytics-service}
-          predicates:
-            - Path=/analytics/v3/api-docs/**,/analytics/swagger-ui/**
-          filters:
-            - RewritePath=/analytics/(?<segment>.*), /$\{segment}
+      server:
+        webflux:
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origins:
+                  - "http://localhost:3000"   # learner app
+                  - "http://localhost:3001"   # console app
+                  - "http://localhost:3002"   # public app
+                allowed-methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+                allowed-headers: "*"
+                allow-credentials: true
+          default-filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20      # tokens added per second
+                redis-rate-limiter.burstCapacity: 40      # max burst
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@rateLimitKeyResolver}"
+          routes:
+            - id: identity-service
+              uri: ${IDENTITY_SERVICE_URI:lb://identity-service}
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/identity/**
+            - id: identity-service-docs
+              uri: ${IDENTITY_SERVICE_URI:lb://identity-service}
+              predicates:
+                - Path=/identity/v3/api-docs/**,/identity/swagger-ui/**
+              filters:
+                - RewritePath=/identity/(?<segment>.*), /$\{segment}
+            - id: learning-service
+              uri: ${LEARNING_SERVICE_URI:lb://learning-service}
+              predicates:
+                - Path=/api/v1/learning/**
+            - id: learning-service-docs
+              uri: ${LEARNING_SERVICE_URI:lb://learning-service}
+              predicates:
+                - Path=/learning/v3/api-docs/**,/learning/swagger-ui/**
+              filters:
+                - RewritePath=/learning/(?<segment>.*), /$\{segment}
+            - id: assessment-service
+              uri: ${ASSESSMENT_SERVICE_URI:lb://assessment-service}
+              predicates:
+                - Path=/api/v1/assessment/**
+            - id: assessment-service-docs
+              uri: ${ASSESSMENT_SERVICE_URI:lb://assessment-service}
+              predicates:
+                - Path=/assessment/v3/api-docs/**,/assessment/swagger-ui/**
+              filters:
+                - RewritePath=/assessment/(?<segment>.*), /$\{segment}
+            - id: portfolio-service
+              uri: ${PORTFOLIO_SERVICE_URI:lb://portfolio-service}
+              predicates:
+                - Path=/api/v1/portfolio/**
+            - id: portfolio-service-docs
+              uri: ${PORTFOLIO_SERVICE_URI:lb://portfolio-service}
+              predicates:
+                - Path=/portfolio/v3/api-docs/**,/portfolio/swagger-ui/**
+              filters:
+                - RewritePath=/portfolio/(?<segment>.*), /$\{segment}
+            - id: analytics-service
+              uri: ${ANALYTICS_SERVICE_URI:lb://analytics-service}
+              predicates:
+                - Path=/api/v1/analytics/**
+            - id: analytics-service-docs
+              uri: ${ANALYTICS_SERVICE_URI:lb://analytics-service}
+              predicates:
+                - Path=/analytics/v3/api-docs/**,/analytics/swagger-ui/**
+              filters:
+                - RewritePath=/analytics/(?<segment>.*), /$\{segment}
 
 app:
   gateway:

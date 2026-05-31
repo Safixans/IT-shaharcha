@@ -6,19 +6,33 @@
   color-scheme: light;
 }
 
-body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+@layer base {
+  body {
+    @apply bg-[#f6f8fb] font-sans text-ink antialiased;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    @apply bg-brand-100 text-brand-900;
+  }
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
+  }
 }
 
 @layer components {
+  /* ---- Buttons ---- */
   .btn {
-    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-500 text-white hover:bg-brand-600;
+    @apply btn bg-brand-600 text-white shadow-soft hover:bg-brand-700 active:translate-y-px;
+  }
+  .btn-gradient {
+    @apply btn bg-brand-gradient text-white shadow-lift hover:opacity-95 active:translate-y-px;
   }
   .btn-ghost {
-    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-100;
+    @apply btn border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300;
   }
   .btn-danger {
     @apply btn border border-red-200 bg-white text-red-600 hover:bg-red-50;
@@ -26,8 +40,13 @@ body {
   .btn-sm {
     @apply px-2.5 py-1 text-xs;
   }
+  .btn-lg {
+    @apply rounded-2xl px-6 py-3 text-base;
+  }
+
+  /* ---- Forms ---- */
   .input {
-    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
   }
   .select {
     @apply input bg-white;
@@ -35,16 +54,103 @@ body {
   .label {
     @apply mb-1 block text-sm font-medium text-slate-700;
   }
+
+  /* ---- Surfaces ---- */
   .card {
-    @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm;
+    @apply rounded-3xl border border-slate-200/70 bg-white p-6 shadow-soft;
   }
+  .card-hover {
+    @apply card transition-all duration-200 hover:-translate-y-1 hover:border-brand-200 hover:shadow-card;
+  }
+  .card-feature {
+    @apply card relative overflow-hidden;
+  }
+
+  /* ---- Badges ---- */
   .badge {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium;
   }
+  .badge-brand {
+    @apply badge bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100;
+  }
+  .badge-slate {
+    @apply badge bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200;
+  }
+  .badge-green {
+    @apply badge bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100;
+  }
+  .badge-amber {
+    @apply badge bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-100;
+  }
+
+  /* ---- Helpers ---- */
+  .text-gradient {
+    @apply bg-brand-gradient bg-clip-text text-transparent;
+  }
+  .section-eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-brand-600;
+  }
+
+  /* ---- Progress ---- */
   .progress {
     @apply h-2 w-full overflow-hidden rounded-full bg-slate-100;
   }
   .progress-bar {
-    @apply h-full rounded-full bg-brand-500 transition-all;
+    @apply h-full rounded-full bg-brand-gradient transition-all duration-500;
+  }
+}
+
+@layer components {
+  /* ---- Lesson markdown ---- */
+  .lesson-prose {
+    @apply text-[15px] leading-7 text-slate-700;
+  }
+  .lesson-prose h1 {
+    @apply mt-0 mb-4 text-2xl font-bold text-ink;
+  }
+  .lesson-prose h2 {
+    @apply mt-8 mb-3 text-xl font-semibold text-ink;
+  }
+  .lesson-prose h3 {
+    @apply mt-6 mb-2 text-base font-semibold text-ink;
+  }
+  .lesson-prose p {
+    @apply my-4;
+  }
+  .lesson-prose ul {
+    @apply my-4 list-disc space-y-1.5 pl-6;
+  }
+  .lesson-prose ol {
+    @apply my-4 list-decimal space-y-1.5 pl-6;
+  }
+  .lesson-prose a {
+    @apply font-medium text-brand-600 underline decoration-brand-200 underline-offset-2 hover:text-brand-700;
+  }
+  .lesson-prose strong {
+    @apply font-semibold text-ink;
+  }
+  .lesson-prose code {
+    @apply rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.85em] text-brand-700;
+  }
+  .lesson-prose pre {
+    @apply my-5 overflow-x-auto rounded-2xl bg-ink p-4 text-sm leading-relaxed text-slate-100 shadow-soft;
+  }
+  .lesson-prose pre code {
+    @apply bg-transparent p-0 font-mono text-slate-100;
+  }
+  .lesson-prose blockquote {
+    @apply my-5 border-l-4 border-brand-300 bg-brand-50/50 py-1 pl-4 italic text-slate-600;
+  }
+  .lesson-prose hr {
+    @apply my-8 border-slate-200;
+  }
+  .lesson-prose table {
+    @apply my-5 w-full border-collapse overflow-hidden rounded-lg text-sm;
+  }
+  .lesson-prose th {
+    @apply border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-700;
+  }
+  .lesson-prose td {
+    @apply border-b border-slate-100 px-3 py-2 align-top;
   }
 }

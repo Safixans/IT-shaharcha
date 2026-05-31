@@ -26,4 +26,10 @@ public class Section extends BaseEntity {
 
     @Column(name = "duration_minutes")
     private Integer durationMinutes;
+
+    @Column(columnDefinition = "text")
+    private String content;
+
+    @Column(name = "pdf_url", columnDefinition = "text")
+    private String pdfUrl;
 }

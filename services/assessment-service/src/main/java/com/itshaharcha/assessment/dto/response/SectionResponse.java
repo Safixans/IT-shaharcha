@@ -10,5 +10,7 @@ public record SectionResponse(
         String name,
         int order,
         int questionCount,
-        Integer durationMinutes) {
+        Integer durationMinutes,
+        String content,
+        String pdfUrl) {
 }

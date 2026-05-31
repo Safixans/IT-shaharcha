@@ -27,7 +27,22 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader title={`Hi${name ? `, ${name}` : ""} 👋`} description="Your progress across the platform." />
+      <div className="mb-8 overflow-hidden rounded-2xl bg-brand-gradient p-6 text-white shadow-lift sm:p-8">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+          Hi{name ? `, ${name}` : ""} 👋
+        </h1>
+        <p className="mt-1 max-w-lg text-sm text-white/85">
+          Track your progress, keep your streak alive, and climb the rankings across learning, exams, and portfolio.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Link href="/learn" className="btn bg-white text-brand-700 hover:bg-white/90">
+            Continue learning
+          </Link>
+          <Link href="/rankings" className="btn border border-white/30 text-white hover:bg-white/10">
+            View rankings
+          </Link>
+        </div>
+      </div>
 
       {loading ? (
         <Loading />
@@ -50,7 +65,7 @@ export default function Dashboard() {
                 <div key={d.domain} className="card">
                   <div className="flex items-center justify-between">
                     <p className="font-medium capitalize text-slate-900">{d.domain}</p>
-                    <span className="badge bg-brand-50 text-brand-700">{d.points} pts</span>
+                    <span className="badge-brand">{d.points} pts</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                     {Object.entries(d.counters).map(([k, v]) => (
@@ -79,14 +94,14 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="card">
       <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-3xl font-bold text-slate-900">{value}</p>
+      <p className="mt-1 bg-brand-gradient bg-clip-text text-3xl font-bold text-transparent">{value}</p>
     </div>
   );
 }
 
 function Quick({ href, title, body }: { href: string; title: string; body: string }) {
   return (
-    <Link href={href} className="card transition-shadow hover:shadow-md">
+    <Link href={href} className="card-hover">
       <p className="font-semibold text-slate-900">{title}</p>
       <p className="mt-1 text-sm text-slate-600">{body}</p>
     </Link>

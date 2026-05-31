@@ -206,6 +206,54 @@ export type Course = {
   estimatedMinutes: number | null;
 };
 
+// ---- Roadmaps (public graph catalog) ----
+
+export type RoadmapCard = {
+  id: string;
+  slug: string;
+  title: string;
+  tagline: string | null;
+  icon: string | null;
+  kind: string;
+  difficulty: string | null;
+  nodeCount: number;
+};
+
+export type RoadmapNode = {
+  nodeKey: string;
+  type: string; // "topic" | "milestone"
+  title: string;
+  summary: string | null;
+  detail: string | null;
+  optional: boolean;
+  orderIndex: number;
+  posX: number | null;
+  posY: number | null;
+  courseId: string | null;
+  courseTitle: string | null;
+};
+
+export type RoadmapEdge = {
+  fromNodeKey: string;
+  toNodeKey: string;
+  kind: string; // "sequence" | "branch" | "related"
+  style: string; // "solid" | "dotted"
+};
+
+export type RoadmapDetail = {
+  id: string;
+  slug: string;
+  title: string;
+  tagline: string | null;
+  description: string | null;
+  icon: string | null;
+  kind: string;
+  difficulty: string | null;
+  layoutMode: string;
+  nodes: RoadmapNode[];
+  edges: RoadmapEdge[];
+};
+
 // ---- Portfolio (public published view) ----
 
 export type VerificationStatus = "PENDING" | "VERIFIED" | "REJECTED";
@@ -320,6 +368,8 @@ export type Lesson = {
   kind: string | null;
   estimatedMinutes: number | null;
 };
+
+export type LessonDetail = Lesson & { body: string | null };
 
 export type Module = { id: string; title: string; order: number; lessons: Lesson[] };
 
@@ -438,7 +488,15 @@ export type Exam = {
   sectionCount: number;
 };
 
-export type Section = { id: string; name: string; order: number; questionCount: number };
+export type Section = {
+  id: string;
+  name: string;
+  order: number;
+  questionCount: number;
+  durationMinutes?: number | null;
+  content?: string | null;
+  pdfUrl?: string | null;
+};
 
 export type Question = {
   id: string;
@@ -460,7 +518,13 @@ export type ExamInput = {
   durationMinutes?: number;
   isRealExam?: boolean;
 };
-export type SectionInput = { name: string; order?: number };
+export type SectionInput = {
+  name: string;
+  order?: number;
+  durationMinutes?: number;
+  content?: string;
+  pdfUrl?: string;
+};
 export type QuestionInput = {
   prompt: string;
   kind: QuestionKind;
@@ -678,6 +742,14 @@ export const api = {
     return request<Page<Course>>("/learning/courses", { query, auth: false });
   },
 
+  listRoadmaps(query?: { q?: string; kind?: string; page?: number; size?: number }) {
+    return request<Page<RoadmapCard>>("/learning/roadmaps", { query, auth: false });
+  },
+
+  getRoadmap(slug: string) {
+    return request<RoadmapDetail>(`/learning/roadmaps/${encodeURIComponent(slug)}`, { auth: false });
+  },
+
   // ---- Public portfolio + rankings (no auth) ----
 
   getPublicPortfolio(handle: string) {
@@ -766,16 +838,22 @@ export const api = {
     return request<CourseDetail>(`/learning/courses/${courseId}`, { auth: false });
   },
 
+  getLesson(lessonId: string) {
+    return request<LessonDetail>(`/learning/lessons/${lessonId}`, { auth: false });
+  },
+
   listTutorials(query?: { topic?: string }) {
-    return request<Tutorial[]>("/learning/tutorials", { query, auth: false });
+    return request<Page<Tutorial>>("/learning/tutorials", { query, auth: false }).then((p) => p.items);
   },
 
   listDocs(query?: { topic?: string }) {
-    return request<Doc[]>("/learning/docs", { query, auth: false });
+    return request<Page<Doc>>("/learning/docs", { query, auth: false }).then((p) => p.items);
   },
 
   listTypingLessons(query?: { difficulty?: string }) {
-    return request<TypingLesson[]>("/learning/typing/lessons", { query, auth: false });
+    return request<Page<TypingLesson>>("/learning/typing/lessons", { query, auth: false }).then(
+      (p) => p.items,
+    );
   },
 
   // ---- Learning — authoring (TEACHER writes/edits; ADMIN deletes) ----
@@ -853,11 +931,11 @@ export const api = {
   // ============================================================
 
   listExams(query?: { examType?: ExamType; page?: number; size?: number }) {
-    return request<Page<Exam>>("/assessment/exams", { query, auth: false });
+    return request<Page<Exam>>("/assessment/exams", { query });
   },
 
   getExam(examId: string) {
-    return request<ExamDetail>(`/assessment/exams/${examId}`, { auth: false });
+    return request<ExamDetail>(`/assessment/exams/${examId}`);
   },
 
   createExam(data: ExamInput) {
@@ -873,6 +951,12 @@ export const api = {
   createSection(examId: string, data: SectionInput) {
     return request<Section>(`/assessment/admin/exams/${examId}/sections`, {
       method: "POST",
+      body: data,
+    });
+  },
+  updateSection(sectionId: string, data: SectionInput) {
+    return request<Section>(`/assessment/admin/sections/${sectionId}`, {
+      method: "PATCH",
       body: data,
     });
   },
@@ -910,7 +994,7 @@ export const api = {
   },
 
   listMyEnrollments() {
-    return request<Enrollment[]>("/learning/enrollments");
+    return request<Page<Enrollment>>("/learning/enrollments").then((p) => p.items);
   },
 
   startLesson(lessonId: string) {

@@ -22,4 +22,6 @@ public interface CourseRepository extends JpaRepository<Course, UUID> {
                          Pageable pageable);
 
     long countByTrackId(UUID trackId);
+
+    java.util.Optional<Course> findFirstByTitleIgnoreCase(String title);
 }

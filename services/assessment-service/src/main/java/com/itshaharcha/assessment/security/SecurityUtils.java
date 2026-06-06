@@ -38,4 +38,11 @@ public final class SecurityUtils {
     public static boolean isAdmin() {
         return currentRoles().contains("ROLE_ADMIN");
     }
+
+    /** Authors (admin/moderator/teacher) may browse inactive units; students see active only. */
+    public static boolean isAuthor() {
+        Set<String> roles = currentRoles();
+        return roles.contains("ROLE_ADMIN") || roles.contains("ROLE_MODERATOR")
+                || roles.contains("ROLE_TEACHER");
+    }
 }

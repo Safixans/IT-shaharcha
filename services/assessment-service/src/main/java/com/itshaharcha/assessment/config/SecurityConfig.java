@@ -24,13 +24,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    // Public reads (spec marks the catalog browse endpoints security: []). Method-scoped
-    // so the colon-verb POST actions on the same paths (e.g. exams/{id}:start) still auth.
-    private static final String[] PUBLIC_GET_PATHS = {
-            "/api/v1/assessment/exams",
-            "/api/v1/assessment/exams/*"
-    };
-
+    // Everything functional requires a valid token (the spec applies bearerAuth globally).
+    // Authoring/grading are further gated by method security; ownership is enforced in services.
     private static final String[] PUBLIC_PATHS = {
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -49,7 +44,6 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_PATHS).permitAll()
-                        .requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(eh -> eh
                         .authenticationEntryPoint(unauthorizedEntryPoint())

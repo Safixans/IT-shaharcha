@@ -66,7 +66,11 @@ export function hasRole(role: string): boolean {
 // Authoring (create/edit) is open to teachers and admins; the backend enforces
 // the precise per-resource permission, this only gates UI affordances.
 export function canAuthor(): boolean {
-  return hasRole("ROLE_TEACHER") || hasRole("ROLE_ADMIN");
+  return hasRole("ROLE_TEACHER") || hasRole("ROLE_ADMIN") || hasRole("ROLE_MODERATOR");
+}
+
+export function isTeacher(): boolean {
+  return hasRole("ROLE_TEACHER");
 }
 
 export function isAdmin(): boolean {

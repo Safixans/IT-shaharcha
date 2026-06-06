@@ -26,6 +26,7 @@
         <module>services/assessment-service</module>
         <module>services/portfolio-service</module>
         <module>services/analytics-service</module>
+        <module>services/attachment-service</module>
         <module>services/api-gateway</module>
     </modules>
 

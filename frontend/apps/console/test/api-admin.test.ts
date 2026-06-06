@@ -80,18 +80,29 @@ describe("authoring — learning & assessment", () => {
     expect(calls[0].init.method).toBe("POST");
   });
 
-  it("creates an exam then a section then a question", async () => {
+  it("creates IELTS, SAT, and quiz units then activates one", async () => {
     mockFetch(
-      json(envelope({ id: "e1" })),
-      json(envelope({ id: "s1" })),
+      json(envelope({ id: "l1" })),
+      json(envelope({ id: "sat1" })),
       json(envelope({ id: "q1" })),
+      json(envelope({ id: "q1", active: true })),
     );
-    await api.createExam({ title: "Mock", examType: "MOCK" });
-    await api.createSection("e1", { name: "Reading" });
-    await api.createQuestion("s1", { prompt: "2+2?", kind: "single_choice", points: 1 });
-    expect(calls[0].url).toBe("/api/v1/assessment/admin/exams");
-    expect(calls[1].url).toBe("/api/v1/assessment/admin/exams/e1/sections");
-    expect(calls[2].url).toBe("/api/v1/assessment/admin/sections/s1/questions");
+    await api.createListening({ title: "Section 1", questions: "<p>…</p>", audioId: "a1" });
+    await api.createSatModule({
+      title: "RW module",
+      satSection: "READING_WRITING",
+      questions: [{ type: "RADIO", prompt: "?", options: [{ text: "A", correct: true }] }],
+    });
+    await api.createQuiz({
+      title: "Quiz",
+      questions: [{ type: "INPUT", prompt: "2+2?", correctAnswers: ["4"] }],
+    });
+    await api.activateQuiz("q1");
+    expect(calls[0].url).toBe("/api/v1/assessment/ielts/listening");
+    expect(calls[1].url).toBe("/api/v1/assessment/sat");
+    expect(calls[2].url).toBe("/api/v1/assessment/quizzes");
+    expect(calls[3].url).toBe("/api/v1/assessment/quizzes/q1:activate");
+    expect(calls[3].init.method).toBe("POST");
   });
 });
 

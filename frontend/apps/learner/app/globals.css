@@ -154,3 +154,31 @@
     @apply border-b border-slate-100 px-3 py-2 align-top;
   }
 }
+
+/* ---- Assessment content (BlotForm) — minimal, class/tag based ---- */
+.itsh-content { line-height: 1.9; color: #1e293b; }
+.itsh-content p { margin: 0.5rem 0; }
+.itsh-content h1, .itsh-content h2, .itsh-content h3 { font-weight: 600; margin: 0.75rem 0 0.5rem; }
+.itsh-content ul, .itsh-content ol { margin: 0.5rem 0 0.5rem 1.25rem; }
+.itsh-content ul { list-style: disc; }
+.itsh-content ol { list-style: decimal; }
+.itsh-content table { border-collapse: collapse; margin: 0.75rem 0; width: 100%; }
+.itsh-content th, .itsh-content td { border: 1px solid #e2e8f0; padding: 0.4rem 0.6rem; text-align: left; }
+.itsh-content th { background: #f8fafc; font-weight: 600; }
+
+.itsh-blank {
+  display: inline-block; width: 9rem; margin: 0 0.25rem;
+  border: 0; border-bottom: 2px solid #94a3b8; background: #f8fafc;
+  padding: 0 0.35rem; font-size: 0.875rem; line-height: 1.6;
+}
+.itsh-blank:focus { outline: none; border-bottom-color: #6366f1; }
+.itsh-select { margin: 0 0.25rem; border: 1px solid #cbd5e1; border-radius: 0.375rem; padding: 0.1rem 0.35rem; font-size: 0.875rem; }
+.itsh-choices { display: inline-flex; flex-wrap: wrap; gap: 0.75rem; vertical-align: middle; }
+.itsh-choice { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.875rem; }
+.itsh-attachment {
+  display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0.2rem;
+  border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca;
+  border-radius: 0.5rem; padding: 0.2rem 0.6rem; font-size: 0.8125rem; font-weight: 500; cursor: pointer;
+}
+.itsh-attachment:hover { background: #e0e7ff; }
+.itsh-attachment:disabled { opacity: 0.6; cursor: default; }

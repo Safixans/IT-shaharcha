@@ -81,7 +81,7 @@ export default function Dashboard() {
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             <Quick href="/learn" title="Keep learning" body="Browse tracks & resume courses" />
-            <Quick href="/exams" title="Take an exam" body="Mock IELTS / SAT & practice" />
+            <Quick href="/exams" title="Train a skill" body="IELTS L/R/W, SAT modules & quizzes" />
             <Quick href="/portfolio" title="Build portfolio" body="Add certificates & projects" />
           </div>
         </>

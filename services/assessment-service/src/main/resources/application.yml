@@ -37,6 +37,9 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
 app:
+  identity:
+    # Used for teacher↔student grading authorization; the caller's token is forwarded.
+    base-url: ${IDENTITY_URL:http://localhost:9001}
   events:
     # Set true (and run a broker) to publish domain events to Kafka.
     kafka-enabled: ${KAFKA_ENABLED:false}

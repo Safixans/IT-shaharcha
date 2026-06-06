@@ -8,7 +8,7 @@ type Card = { href: string; title: string; body: string; adminOnly?: boolean };
 
 const CARDS: Card[] = [
   { href: "/learning", title: "Learning content", body: "Author tracks, courses, modules, lessons, tutorials, docs and typing drills." },
-  { href: "/assessment", title: "Assessments", body: "Create exams and build them out with sections and questions." },
+  { href: "/assessment", title: "Assessment", body: "Author IELTS L/R/W, SAT modules & quizzes; grade Writing submissions." },
   { href: "/portfolio", title: "Verification", body: "Review and verify learner certificates." },
   { href: "/accounts", title: "Accounts", body: "Suspend, activate, and manage roles for any account.", adminOnly: true },
   { href: "/roles", title: "Roles", body: "Manage the platform role catalog.", adminOnly: true },

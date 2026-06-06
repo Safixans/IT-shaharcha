@@ -1,0 +1,107 @@
+    private List<Answer> getAnswers(User user, List<AnswerDto> answers, SectionRecord sectionRecord) {
+        log.info("MockQuizServiceImpl.getAnswers: user = {}, answers = {}, sectionRecord = {}",
+                user, answers, sectionRecord);
+
+        if (answers == null) {
+            answers = Collections.emptyList();
+        }
+
+        List<Problem> problems = problemRepository.findBySectionId(sectionRecord.getSection());
+
+        Map<UUID, Map<String, String>> mappedAnswers = answers.stream()
+                .collect(Collectors.toMap(
+                        AnswerDto::getProblemId,
+                        AnswerDto::getAnswers
+                ));
+
+        return problems.stream()
+                .flatMap(problem -> {
+                    // Always default to empty map — never depend on user having submitted anything.
+                    Map<String, String> userAnswers =
+                            mappedAnswers.getOrDefault(problem.getId(), Map.of());
+
+                    return switch (problem.getProblemType()) {
+                        case INPUT, RADIO, SELECT -> gradeSingle(user, sectionRecord, problem, userAnswers);
+                        case MULTIPLE_CHOICE -> gradeMultiSelect(user, sectionRecord, problem, userAnswers);
+                    };
+                })
+                .toList();
+    }
+
+    Stream<Answer> gradeSingle(User student, SectionRecord sectionRecord, Problem problem, Map<String, String> userAnswers) {
+        log.info("Grade single answer: user.id = {}, userAnswers = {}", student.getId(), userAnswers);
+        List<String> correctOptions = getCorrectOptions(problem);
+
+        String submitted = userAnswers.values().stream()
+                .findFirst()
+                .orElse("")
+                .trim();
+
+        return Stream.of(Answer.builder()
+                .sectionRecord(sectionRecord)
+                .student(student)
+                .orderIndex(problem.getOrderIndex())
+                .correctOptions(correctOptions)
+                .answer(submitted)
+                .correct(checkAnswer(correctOptions, submitted))
+                .build());
+    }
+
+    Stream<Answer> gradeMultiSelect(User student, SectionRecord sectionRecord, Problem problem, Map<String, String> userAnswers) {
+        log.info("Gradle multiple select answer: user.id = {}, userAnswers = {}", student.getId(), userAnswers);
+        // Group options by slot, preserving insertion order.
+        List<Option> bySlot = problem.getOptions()
+                .stream()
+                .filter(op -> Boolean.TRUE.equals(op.getCorrect()))
+                .toList();
+
+        List<String> correctOptions = getCorrectOptions(problem);
+
+        // Flatten all submitted values into a mutable pool — keys are irrelevant.
+        List<String> pool = userAnswers.values().stream()
+                .map(String::trim)
+                .filter(v -> !v.isEmpty())
+                .collect(Collectors.toCollection(() -> new ArrayList<>(2)));
+
+        return bySlot.stream()
+                .map(option -> {
+                    if (pool.contains(option.getOption())) {
+                        pool.remove(option.getOption());
+                        return Answer.builder()
+                                .sectionRecord(sectionRecord)
+                                .student(student)
+                                .orderIndex(option.getOrderIndex())
+                                .correctOptions(List.of(option.getOption()))
+                                .answer(option.getOption())
+                                .correct(true)
+                                .build();
+                    }
+
+                    String first = pool.stream()
+                            .filter(s -> !correctOptions.contains(s))
+                            .findFirst()
+                            .orElse("");
+
+                    pool.remove(first);
+                    return Answer.builder()
+                            .sectionRecord(sectionRecord)
+                            .student(student)
+                            .orderIndex(option.getOrderIndex())
+                            .correctOptions(List.of(option.getOption()))
+                            .answer(first)
+                            .correct(false)
+                            .build();
+                });
+    }
+
+    static List<String> getCorrectOptions(Problem problem) {
+        return problem.getOptions()
+                .stream()
+                .filter(op -> Boolean.TRUE.equals(op.getCorrect()))
+                .map(Option::getOption)
+                .toList();
+    }
+
+    private boolean checkAnswer(List<String> correctOptions, String answer) {
+        return correctOptions.contains(answer);
+    }

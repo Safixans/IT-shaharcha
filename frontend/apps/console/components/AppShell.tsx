@@ -11,7 +11,7 @@ type NavItem = { href: string; label: string; adminOnly?: boolean };
 const NAV: NavItem[] = [
   { href: "/", label: "Overview" },
   { href: "/learning", label: "Learning content" },
-  { href: "/assessment", label: "Assessments" },
+  { href: "/assessment", label: "Assessment" },
   { href: "/portfolio", label: "Verification" },
   { href: "/accounts", label: "Accounts", adminOnly: true },
   { href: "/roles", label: "Roles", adminOnly: true },

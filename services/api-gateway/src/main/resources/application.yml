@@ -82,6 +82,16 @@ spring:
                 - Path=/analytics/v3/api-docs/**,/analytics/swagger-ui/**
               filters:
                 - RewritePath=/analytics/(?<segment>.*), /$\{segment}
+            - id: attachment-service
+              uri: ${ATTACHMENT_SERVICE_URI:lb://attachment-service}
+              predicates:
+                - Path=/api/upload,/api/upload/**,/api/download/**
+            - id: attachment-service-docs
+              uri: ${ATTACHMENT_SERVICE_URI:lb://attachment-service}
+              predicates:
+                - Path=/attachment/v3/api-docs/**,/attachment/swagger-ui/**
+              filters:
+                - RewritePath=/attachment/(?<segment>.*), /$\{segment}
 
 app:
   gateway:

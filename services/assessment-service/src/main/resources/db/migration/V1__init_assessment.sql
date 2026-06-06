@@ -1,118 +1,92 @@
--- Assessment service schema (specs/assessment.openapi.yaml).
--- Catalog: exams -> sections -> questions. Plus exam sessions, the answers saved
--- during a session, and the scored results. JSON-shaped fields (choices,
--- correctAnswer, answer value, sectionScores) are stored as TEXT (see the
--- AttributeConverters in com.itshaharcha.assessment.convert).
+-- Assessment service v2 — modular training (IELTS L/R/W, SAT modules, quizzes) + attempts.
+-- Replaces the old exam/section/question/session model. Content answer keys are stored as
+-- jsonb; attempts snapshot the unit content at start so edits/deactivation can't corrupt them.
 
-CREATE TABLE exams (
-    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title             VARCHAR(255) NOT NULL,
-    exam_type         VARCHAR(16)  NOT NULL,
-    description       TEXT,
-    duration_minutes  INTEGER,
-    is_real_exam      BOOLEAN      NOT NULL DEFAULT FALSE,
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_by        VARCHAR(64),
-    updated_by        VARCHAR(64),
-    deleted           BOOLEAN      NOT NULL DEFAULT FALSE,
-    version           BIGINT       NOT NULL DEFAULT 0
+CREATE TABLE ielts_units (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    skill                 VARCHAR(16)  NOT NULL,            -- LISTENING / READING / WRITING
+    title                 VARCHAR(255) NOT NULL,
+    tags                  JSONB        NOT NULL DEFAULT '[]',
+    original_section_data TEXT,
+    section_data          TEXT,                              -- answer-stripped HTML served to students
+    passage               TEXT,
+    prompt                TEXT,
+    writing_task          VARCHAR(16),                       -- TASK_1 / TASK_2 (writing)
+    problems              JSONB,                             -- immutable answer key (null for writing)
+    problem_count         INTEGER      NOT NULL DEFAULT 0,
+    audio_id              UUID,
+    image_id              UUID,
+    duration_seconds      INTEGER      NOT NULL DEFAULT 1200,
+    active                BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    created_by            VARCHAR(64),
+    updated_by            VARCHAR(64),
+    deleted               BOOLEAN      NOT NULL DEFAULT FALSE,
+    version               BIGINT       NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_exams_type ON exams (exam_type);
+CREATE INDEX idx_ielts_units_skill ON ielts_units (skill, active);
+CREATE INDEX idx_ielts_units_tags  ON ielts_units USING gin (tags);
 
-CREATE TABLE sections (
-    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    exam_id           UUID         NOT NULL REFERENCES exams (id) ON DELETE CASCADE,
-    name              VARCHAR(255) NOT NULL,
-    order_index       INTEGER      NOT NULL DEFAULT 0,
-    duration_minutes  INTEGER,
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_by        VARCHAR(64),
-    updated_by        VARCHAR(64),
-    deleted           BOOLEAN      NOT NULL DEFAULT FALSE,
-    version           BIGINT       NOT NULL DEFAULT 0
+CREATE TABLE objective_units (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kind             VARCHAR(16)  NOT NULL,                  -- SAT / QUIZ
+    sat_section      VARCHAR(24),                            -- READING_WRITING / MATH (SAT)
+    title            VARCHAR(255) NOT NULL,
+    tags             JSONB        NOT NULL DEFAULT '[]',
+    questions        JSONB        NOT NULL DEFAULT '[]',     -- prompts + options(+correct) + key
+    problem_count    INTEGER      NOT NULL DEFAULT 0,
+    duration_seconds INTEGER      NOT NULL DEFAULT 1800,
+    active           BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    created_by       VARCHAR(64),
+    updated_by       VARCHAR(64),
+    deleted          BOOLEAN      NOT NULL DEFAULT FALSE,
+    version          BIGINT       NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_sections_exam ON sections (exam_id);
+CREATE INDEX idx_objective_units_kind ON objective_units (kind, active);
+CREATE INDEX idx_objective_units_tags ON objective_units USING gin (tags);
 
-CREATE TABLE questions (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    section_id     UUID         NOT NULL REFERENCES sections (id) ON DELETE CASCADE,
-    exam_id        UUID         NOT NULL REFERENCES exams (id) ON DELETE CASCADE,
-    prompt         TEXT         NOT NULL,
-    kind           VARCHAR(16)  NOT NULL,
-    order_index    INTEGER      NOT NULL DEFAULT 0,
-    points         DOUBLE PRECISION NOT NULL DEFAULT 1,
-    choices        TEXT,
-    correct_answer TEXT,
-    explanation    TEXT,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_by     VARCHAR(64),
-    updated_by     VARCHAR(64),
-    deleted        BOOLEAN      NOT NULL DEFAULT FALSE,
-    version        BIGINT       NOT NULL DEFAULT 0
+CREATE TABLE attempts (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id            UUID         NOT NULL,
+    unit_id               UUID         NOT NULL,
+    family                VARCHAR(24)  NOT NULL,
+    status                VARCHAR(16)  NOT NULL,
+    title                 VARCHAR(255) NOT NULL,
+    snapshot_section_data TEXT,
+    snapshot_passage      TEXT,
+    snapshot_prompt       TEXT,
+    snapshot_audio_id     UUID,
+    snapshot_image_id     UUID,
+    snapshot_problems     JSONB,
+    draft_answers         JSONB,
+    draft_essay           TEXT,
+    answers               JSONB,
+    essay                 TEXT,
+    correct_count         INTEGER      NOT NULL DEFAULT 0,
+    incorrect_count       INTEGER      NOT NULL DEFAULT 0,
+    total_count           INTEGER      NOT NULL DEFAULT 0,
+    score_percent         DOUBLE PRECISION,
+    band                  DOUBLE PRECISION,
+    feedback              TEXT,
+    criteria              JSONB,
+    graded_by             UUID,
+    started_at            TIMESTAMPTZ  NOT NULL,
+    ends_at               TIMESTAMPTZ  NOT NULL,
+    submitted_at          TIMESTAMPTZ,
+    graded_at             TIMESTAMPTZ,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    created_by            VARCHAR(64),
+    updated_by            VARCHAR(64),
+    deleted               BOOLEAN      NOT NULL DEFAULT FALSE,
+    version               BIGINT       NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_questions_section ON questions (section_id);
-CREATE INDEX idx_questions_exam    ON questions (exam_id);
-
-CREATE TABLE exam_sessions (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    exam_id       UUID         NOT NULL REFERENCES exams (id) ON DELETE CASCADE,
-    account_id    UUID         NOT NULL,
-    status        VARCHAR(16)  NOT NULL DEFAULT 'in_progress',
-    started_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    expires_at    TIMESTAMPTZ,
-    submitted_at  TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_by    VARCHAR(64),
-    updated_by    VARCHAR(64),
-    deleted       BOOLEAN      NOT NULL DEFAULT FALSE,
-    version       BIGINT       NOT NULL DEFAULT 0
-);
-
-CREATE INDEX idx_exam_sessions_account ON exam_sessions (account_id);
-CREATE INDEX idx_exam_sessions_exam    ON exam_sessions (exam_id, account_id);
-
-CREATE TABLE session_answers (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id   UUID         NOT NULL REFERENCES exam_sessions (id) ON DELETE CASCADE,
-    question_id  UUID         NOT NULL,
-    section_id   UUID,
-    value        TEXT,
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_by   VARCHAR(64),
-    updated_by   VARCHAR(64),
-    deleted      BOOLEAN      NOT NULL DEFAULT FALSE,
-    version      BIGINT       NOT NULL DEFAULT 0,
-    UNIQUE (session_id, question_id)
-);
-
-CREATE INDEX idx_session_answers_session ON session_answers (session_id);
-
-CREATE TABLE exam_results (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id     UUID         NOT NULL UNIQUE REFERENCES exam_sessions (id) ON DELETE CASCADE,
-    exam_id        UUID         NOT NULL REFERENCES exams (id) ON DELETE CASCADE,
-    account_id     UUID         NOT NULL,
-    exam_type      VARCHAR(16)  NOT NULL,
-    scaled_score   DOUBLE PRECISION NOT NULL,
-    max_score      DOUBLE PRECISION,
-    section_scores TEXT,
-    scored_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    feedback       TEXT,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_by     VARCHAR(64),
-    updated_by     VARCHAR(64),
-    deleted        BOOLEAN      NOT NULL DEFAULT FALSE,
-    version        BIGINT       NOT NULL DEFAULT 0
-);
-
-CREATE INDEX idx_exam_results_account ON exam_results (account_id, scored_at);
-CREATE INDEX idx_exam_results_type    ON exam_results (account_id, exam_type);
+CREATE INDEX idx_attempts_student        ON attempts (student_id, started_at DESC);
+CREATE INDEX idx_attempts_student_family ON attempts (student_id, family, status);
+CREATE INDEX idx_attempts_grading        ON attempts (family, status, submitted_at);

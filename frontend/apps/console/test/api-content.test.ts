@@ -94,11 +94,11 @@ describe("content sources", () => {
   });
 });
 
-describe("exam settings", () => {
-  it("updates an exam via PATCH", async () => {
-    mockFetch(json(envelope({ id: "e1", title: "Renamed" })));
-    await api.updateExam("e1", { title: "Renamed", examType: "IELTS" });
-    expect(calls[0].url).toBe("/api/v1/assessment/admin/exams/e1");
-    expect(calls[0].init.method).toBe("PATCH");
+describe("ielts authoring", () => {
+  it("replaces a reading unit's content via PUT (re-parses the answer key)", async () => {
+    mockFetch(json(envelope({ id: "r1", title: "Renamed" })));
+    await api.updateReading("r1", { title: "Renamed", passage: "…", questions: "<p>…</p>" });
+    expect(calls[0].url).toBe("/api/v1/assessment/ielts/reading/r1");
+    expect(calls[0].init.method).toBe("PUT");
   });
 });

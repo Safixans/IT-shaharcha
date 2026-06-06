@@ -54,7 +54,7 @@ async function parseError(res: Response): Promise<ApiError> {
   }
 }
 
-type QueryValue = string | number | boolean | undefined | null;
+type QueryValue = string | number | boolean | undefined | null | string[];
 
 type RequestOptions = {
   method?: string;
@@ -68,7 +68,11 @@ function buildPath(path: string, query?: Record<string, QueryValue>): string {
   if (!query) return path;
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== null && value !== "") {
+    if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      // Repeatable params (e.g. ?tags=a&tags=b).
+      for (const v of value) if (v !== "") params.append(key, String(v));
+    } else {
       params.append(key, String(value));
     }
   }
@@ -466,74 +470,99 @@ export type ContentSourceInput = {
   defaultTopic?: string;
 };
 
-// ---- Assessment (catalog + authoring) ----
+// ---- Assessment (modular training: IELTS L/R/W, SAT modules, quizzes) ----
 
-export type ExamType = "IELTS" | "SAT" | "MOCK" | "PRACTICE";
-export type QuestionKind =
-  | "single_choice"
-  | "multiple_choice"
-  | "true_false"
-  | "short_answer"
-  | "essay";
+export type AttemptFamily =
+  | "IELTS_LISTENING"
+  | "IELTS_READING"
+  | "IELTS_WRITING"
+  | "SAT"
+  | "QUIZ";
 
-export type Choice = { id: string; text: string };
+export type AttemptStatus =
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "PENDING_GRADING"
+  | "GRADED"
+  | "EXPIRED";
 
-export type Exam = {
+export type ProblemType = "INPUT" | "RADIO" | "SELECT" | "MULTI_SELECT";
+export type WritingTask = "TASK_1" | "TASK_2";
+export type SatSection = "READING_WRITING" | "MATH";
+
+/** A problem as served to a candidate — correctness withheld. */
+export type ServedProblem = {
+  problemId: string;
+  type: ProblemType;
+  prompt: string | null;
+  options: { id: string; text: string }[] | null;
+};
+
+/** Unit summary (browse/list). */
+export type UnitMeta = {
   id: string;
+  family: AttemptFamily;
   title: string;
-  examType: ExamType;
-  description: string | null;
-  durationMinutes: number | null;
-  isRealExam: boolean;
-  sectionCount: number;
+  tags: string[];
+  active: boolean;
+  problemCount: number;
+  durationSeconds: number | null;
+  satSection?: SatSection | null;
+  writingTask?: WritingTask | null;
 };
 
-export type Section = {
-  id: string;
-  name: string;
-  order: number;
-  questionCount: number;
-  durationMinutes?: number | null;
-  content?: string | null;
-  pdfUrl?: string | null;
+/** Authoring view: unit + its answer-stripped served content. */
+export type UnitDetail = UnitMeta & {
+  sectionData: string | null;
+  /** Authored HTML with answer markers — present only for authors (used to edit/re-parse). */
+  originalSectionData?: string | null;
+  passage: string | null;
+  prompt: string | null;
+  audioId: string | null;
+  imageId: string | null;
+  problems: ServedProblem[];
 };
 
-export type Question = {
-  id: string;
-  prompt: string;
-  kind: QuestionKind;
-  order: number;
-  points: number;
-  choices: Choice[] | null;
-  correctAnswer: string | null;
-  explanation: string | null;
-};
+// ---- create / author inputs ----
 
-export type ExamDetail = Exam & { sections: Section[] };
-
-export type ExamInput = {
+export type ListeningCreate = {
   title: string;
-  examType: ExamType;
-  description?: string;
-  durationMinutes?: number;
-  isRealExam?: boolean;
+  tags?: string[];
+  questions: string; // authored HTML with answer "blots"
+  audioId: string;
+  durationSeconds?: number;
 };
-export type SectionInput = {
-  name: string;
-  order?: number;
-  durationMinutes?: number;
-  content?: string;
-  pdfUrl?: string;
+export type ReadingCreate = {
+  title: string;
+  tags?: string[];
+  passage?: string;
+  questions: string; // authored HTML with answer "blots"
+  durationSeconds?: number;
 };
-export type QuestionInput = {
+export type WritingCreate = {
+  title: string;
+  tags?: string[];
+  task: WritingTask;
   prompt: string;
-  kind: QuestionKind;
-  order?: number;
-  points?: number;
-  choices?: Choice[];
-  correctAnswer?: string;
+  imageId?: string;
+  durationSeconds?: number;
+};
+export type OptionInput = { text: string; correct: boolean };
+export type ObjectiveQuestionInput = {
+  type: ProblemType;
+  prompt: string;
   explanation?: string;
+  options?: OptionInput[]; // for RADIO/SELECT/MULTI_SELECT
+  correctAnswers?: string[]; // for INPUT (acceptable answers)
 };
+export type ObjectiveUnitCreate = {
+  title: string;
+  tags?: string[];
+  satSection?: SatSection; // required for SAT
+  durationSeconds?: number;
+  questions: ObjectiveQuestionInput[];
+};
+export type ActivationRequest = { active?: boolean };
 
 // ---- Verification (reviewer) ----
 
@@ -574,48 +603,97 @@ export type TypingSession = {
   createdAt: string;
 };
 
-// ---- Assessment (candidate session flow) ----
+// ---- Assessment (attempt lifecycle) ----
 
-export type SessionStatus = "in_progress" | "submitted" | "scored" | "expired";
-
-export type ExamSession = {
-  id: string;
-  examId: string;
-  accountId: string;
-  status: SessionStatus;
+/**
+ * Timezone-proof timing. Count down from `remainingSeconds` with a local monotonic timer;
+ * never subtract a server timestamp from the client clock.
+ */
+export type Timing = {
   startedAt: string;
-  expiresAt: string | null;
-  submittedAt: string | null;
+  endsAt: string;
+  serverNow: string;
+  remainingSeconds: number;
 };
 
-export type SessionQuestion = {
-  id: string;
-  prompt: string;
-  kind: QuestionKind;
-  order: number;
-  points: number;
-  choices: Choice[] | null;
+/** A started/resumed attempt: snapshotted content (answer-safe) + timing. */
+export type AttemptSession = {
+  attemptId: string;
+  unitId: string;
+  family: AttemptFamily;
+  status: AttemptStatus;
+  title?: string | null;
+  timing: Timing;
+  sectionData: string | null;
+  passage: string | null;
+  prompt: string | null;
+  audioId: string | null;
+  imageId: string | null;
+  problems: ServedProblem[];
 };
 
-export type Answer = { questionId: string; value: string; sectionId?: string | null };
+/** Optimized submit: graded by value, no order index. */
+export type AnswerInput = { problemId: string; values: string[] };
+export type AttemptSubmit = { answers?: AnswerInput[]; essay?: string };
 
-export type SectionScore = { section: string; score: number; max?: number | null };
+export type AnswerReport = {
+  problemId: string;
+  submitted: string[];
+  correctOptions: string[];
+  correct: boolean;
+};
 
-export type ExamResult = {
-  sessionId: string;
-  examId: string;
-  accountId: string;
-  examType: ExamType;
-  scaledScore: number;
-  maxScore: number | null;
-  sectionScores: SectionScore[] | null;
-  scoredAt: string;
+export type WritingCriteria = {
+  taskAchievement?: number | null;
+  coherenceCohesion?: number | null;
+  lexicalResource?: number | null;
+  grammaticalRange?: number | null;
+};
+
+export type AttemptReport = {
+  attemptId: string;
+  unitId: string;
+  studentId?: string;
+  family: AttemptFamily;
+  title?: string | null;
+  status: AttemptStatus;
+  correct: number;
+  incorrect: number;
+  total: number;
+  scorePercent: number | null;
+  band: number | null;
+  answers: AnswerReport[] | null;
+  essay: string | null;
   feedback: string | null;
+  criteria: WritingCriteria | null;
+  startedAt: string;
+  submittedAt: string | null;
+  gradedAt: string | null;
+};
+
+export type WritingGrade = {
+  band: number;
+  criteria?: WritingCriteria;
+  feedback?: string;
 };
 
 // ---- Portfolio (self management) ----
 
 export type FileRef = { fileId: string; contentType: string; sizeBytes: number; url: string | null };
+
+// Attachment service (assessment media: listening audio, writing Task-1 image).
+export type AttachmentRef = {
+  fileId: string;
+  originalName: string;
+  contentType: string;
+  sizeBytes: number;
+};
+export type DownloadUrl = {
+  url: string;
+  expiresInSeconds: number;
+  contentType?: string;
+  originalName?: string;
+};
 
 export type CertificateCreate = {
   title: string;
@@ -927,51 +1005,124 @@ export const api = {
   },
 
   // ============================================================
-  // Assessment — catalog + authoring
+  // Assessment — units (browse + authoring)
   // ============================================================
 
-  listExams(query?: { examType?: ExamType; page?: number; size?: number }) {
-    return request<Page<Exam>>("/assessment/exams", { query });
+  // IELTS Listening
+  listListening(query?: { tags?: string[]; page?: number; size?: number }) {
+    return request<Page<UnitMeta>>("/assessment/ielts/listening", { query });
   },
-
-  getExam(examId: string) {
-    return request<ExamDetail>(`/assessment/exams/${examId}`);
+  getListening(unitId: string) {
+    return request<UnitDetail>(`/assessment/ielts/listening/${unitId}`);
   },
-
-  createExam(data: ExamInput) {
-    return request<Exam>("/assessment/admin/exams", { method: "POST", body: data });
+  createListening(data: ListeningCreate) {
+    return request<UnitDetail>("/assessment/ielts/listening", { method: "POST", body: data });
   },
-  updateExam(examId: string, data: Partial<ExamInput>) {
-    return request<Exam>(`/assessment/admin/exams/${examId}`, { method: "PATCH", body: data });
+  updateListening(unitId: string, data: ListeningCreate) {
+    return request<UnitDetail>(`/assessment/ielts/listening/${unitId}`, { method: "PUT", body: data });
   },
-  deleteExam(examId: string) {
-    return request<void>(`/assessment/admin/exams/${examId}`, { method: "DELETE" });
+  deleteListening(unitId: string) {
+    return request<void>(`/assessment/ielts/listening/${unitId}`, { method: "DELETE" });
   },
-
-  createSection(examId: string, data: SectionInput) {
-    return request<Section>(`/assessment/admin/exams/${examId}/sections`, {
+  activateListening(unitId: string, active = true) {
+    return request<UnitDetail>(`/assessment/ielts/listening/${unitId}:activate`, {
       method: "POST",
-      body: data,
+      body: { active } as ActivationRequest,
     });
-  },
-  updateSection(sectionId: string, data: SectionInput) {
-    return request<Section>(`/assessment/admin/sections/${sectionId}`, {
-      method: "PATCH",
-      body: data,
-    });
-  },
-  deleteSection(sectionId: string) {
-    return request<void>(`/assessment/admin/sections/${sectionId}`, { method: "DELETE" });
   },
 
-  createQuestion(sectionId: string, data: QuestionInput) {
-    return request<Question>(`/assessment/admin/sections/${sectionId}/questions`, {
+  // IELTS Reading
+  listReading(query?: { tags?: string[]; page?: number; size?: number }) {
+    return request<Page<UnitMeta>>("/assessment/ielts/reading", { query });
+  },
+  getReading(unitId: string) {
+    return request<UnitDetail>(`/assessment/ielts/reading/${unitId}`);
+  },
+  createReading(data: ReadingCreate) {
+    return request<UnitDetail>("/assessment/ielts/reading", { method: "POST", body: data });
+  },
+  updateReading(unitId: string, data: ReadingCreate) {
+    return request<UnitDetail>(`/assessment/ielts/reading/${unitId}`, { method: "PUT", body: data });
+  },
+  deleteReading(unitId: string) {
+    return request<void>(`/assessment/ielts/reading/${unitId}`, { method: "DELETE" });
+  },
+  activateReading(unitId: string, active = true) {
+    return request<UnitDetail>(`/assessment/ielts/reading/${unitId}:activate`, {
       method: "POST",
-      body: data,
+      body: { active } as ActivationRequest,
     });
   },
-  deleteQuestion(questionId: string) {
-    return request<void>(`/assessment/admin/questions/${questionId}`, { method: "DELETE" });
+
+  // IELTS Writing (teacher-graded)
+  listWriting(query?: { tags?: string[]; page?: number; size?: number }) {
+    return request<Page<UnitMeta>>("/assessment/ielts/writing", { query });
+  },
+  getWriting(unitId: string) {
+    return request<UnitDetail>(`/assessment/ielts/writing/${unitId}`);
+  },
+  createWriting(data: WritingCreate) {
+    return request<UnitDetail>("/assessment/ielts/writing", { method: "POST", body: data });
+  },
+  deleteWriting(unitId: string) {
+    return request<void>(`/assessment/ielts/writing/${unitId}`, { method: "DELETE" });
+  },
+  activateWriting(unitId: string, active = true) {
+    return request<UnitDetail>(`/assessment/ielts/writing/${unitId}:activate`, {
+      method: "POST",
+      body: { active } as ActivationRequest,
+    });
+  },
+
+  // SAT modules (objective)
+  listSatModules(query?: { section?: SatSection; tags?: string[]; page?: number; size?: number }) {
+    return request<Page<UnitMeta>>("/assessment/sat", { query });
+  },
+  getSatModule(unitId: string) {
+    return request<UnitDetail>(`/assessment/sat/${unitId}`);
+  },
+  createSatModule(data: ObjectiveUnitCreate) {
+    return request<UnitDetail>("/assessment/sat", { method: "POST", body: data });
+  },
+  deleteSatModule(unitId: string) {
+    return request<void>(`/assessment/sat/${unitId}`, { method: "DELETE" });
+  },
+  activateSat(unitId: string, active = true) {
+    return request<UnitDetail>(`/assessment/sat/${unitId}:activate`, {
+      method: "POST",
+      body: { active } as ActivationRequest,
+    });
+  },
+
+  // Quizzes (objective)
+  listQuizzes(query?: { tags?: string[]; page?: number; size?: number }) {
+    return request<Page<UnitMeta>>("/assessment/quizzes", { query });
+  },
+  getQuiz(unitId: string) {
+    return request<UnitDetail>(`/assessment/quizzes/${unitId}`);
+  },
+  createQuiz(data: ObjectiveUnitCreate) {
+    return request<UnitDetail>("/assessment/quizzes", { method: "POST", body: data });
+  },
+  deleteQuiz(unitId: string) {
+    return request<void>(`/assessment/quizzes/${unitId}`, { method: "DELETE" });
+  },
+  activateQuiz(unitId: string, active = true) {
+    return request<UnitDetail>(`/assessment/quizzes/${unitId}:activate`, {
+      method: "POST",
+      body: { active } as ActivationRequest,
+    });
+  },
+
+  // ============================================================
+  // Assessment — teacher grading (Writing)
+  // ============================================================
+
+  gradingQueue(query?: { page?: number; size?: number }) {
+    return request<Page<AttemptReport>>("/assessment/grading/queue", { query });
+  },
+  gradeWriting(attemptId: string, data: WritingGrade) {
+    return request<AttemptReport>(`/assessment/grading/${attemptId}`, { method: "POST", body: data });
   },
 
   // ============================================================
@@ -1037,37 +1188,55 @@ export const api = {
   },
 
   // ============================================================
-  // Learner — assessment candidate flow
+  // Learner — assessment attempts
   // ============================================================
 
-  startExam(examId: string) {
-    return request<ExamSession>(`/assessment/exams/${examId}:start`, { method: "POST" });
+  startListeningAttempt(unitId: string) {
+    return request<AttemptSession>(`/assessment/ielts/listening/${unitId}:start`, { method: "POST" });
+  },
+  startReadingAttempt(unitId: string) {
+    return request<AttemptSession>(`/assessment/ielts/reading/${unitId}:start`, { method: "POST" });
+  },
+  startWritingAttempt(unitId: string) {
+    return request<AttemptSession>(`/assessment/ielts/writing/${unitId}:start`, { method: "POST" });
+  },
+  startSatAttempt(unitId: string) {
+    return request<AttemptSession>(`/assessment/sat/${unitId}:start`, { method: "POST" });
+  },
+  startQuizAttempt(unitId: string) {
+    return request<AttemptSession>(`/assessment/quizzes/${unitId}:start`, { method: "POST" });
   },
 
-  getSession(sessionId: string) {
-    return request<ExamSession>(`/assessment/sessions/${sessionId}`);
+  /** Start (or resume) an attempt for any unit, given its family. */
+  startAttempt(family: AttemptFamily, unitId: string) {
+    switch (family) {
+      case "IELTS_LISTENING":
+        return this.startListeningAttempt(unitId);
+      case "IELTS_READING":
+        return this.startReadingAttempt(unitId);
+      case "IELTS_WRITING":
+        return this.startWritingAttempt(unitId);
+      case "SAT":
+        return this.startSatAttempt(unitId);
+      case "QUIZ":
+        return this.startQuizAttempt(unitId);
+    }
   },
 
-  getSessionQuestions(sessionId: string) {
-    return request<SessionQuestion[]>(`/assessment/sessions/${sessionId}/questions`);
+  listMyAttempts(query?: { family?: AttemptFamily; page?: number; size?: number }) {
+    return request<Page<AttemptReport>>("/assessment/attempts", { query });
   },
-
-  saveAnswers(sessionId: string, answers: Answer[]) {
-    return request<void>(`/assessment/sessions/${sessionId}/answers`, {
-      method: "PUT",
-      body: { answers },
-    });
+  getAttempt(attemptId: string) {
+    return request<AttemptReport>(`/assessment/attempts/${attemptId}`);
   },
-
-  submitSession(sessionId: string, answers?: Answer[]) {
-    return request<ExamResult>(`/assessment/sessions/${sessionId}:submit`, {
+  autosaveAttempt(attemptId: string, data: AttemptSubmit) {
+    return request<void>(`/assessment/attempts/${attemptId}:autosave`, { method: "POST", body: data });
+  },
+  submitAttempt(attemptId: string, data?: AttemptSubmit) {
+    return request<AttemptReport>(`/assessment/attempts/${attemptId}:submit`, {
       method: "POST",
-      body: answers ? { answers } : undefined,
+      body: data ?? {},
     });
-  },
-
-  getResult(sessionId: string) {
-    return request<ExamResult>(`/assessment/sessions/${sessionId}/result`);
   },
 
   // ============================================================
@@ -1084,6 +1253,30 @@ export const api = {
     if (!res.ok) throw await parseError(res);
     const env = (await res.json()) as ApiEnvelope<FileRef>;
     return env.data;
+  },
+
+  // Attachment service (assessment audio/image). These live at /api/* (not /api/v1).
+  async uploadAttachment(file: File): Promise<AttachmentRef> {
+    const form = new FormData();
+    form.append("file", file);
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`/api/upload`, { method: "POST", headers, body: form });
+    if (!res.ok) throw await parseError(res);
+    const env = (await res.json()) as ApiEnvelope<AttachmentRef>;
+    return env.data;
+  },
+
+  /** Resolve a presigned, time-limited URL for an attachment fileId (audio/image). */
+  async attachmentUrl(fileId: string): Promise<string> {
+    const token = getAccessToken();
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`/api/download/${fileId}`, { headers });
+    if (!res.ok) throw await parseError(res);
+    const env = (await res.json()) as ApiEnvelope<DownloadUrl>;
+    return env.data.url;
   },
 
   listCertificates(query?: { page?: number; size?: number }) {

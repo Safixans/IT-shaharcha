@@ -51,21 +51,32 @@ describe("learning self-service", () => {
   });
 });
 
-describe("assessment candidate flow", () => {
-  it("starts, fetches questions, and submits", async () => {
+describe("assessment attempt flow", () => {
+  it("starts an attempt, autosaves, and submits by value", async () => {
     mockFetch(
-      json(envelope({ id: "s1", status: "in_progress" })),
-      json(envelope([{ id: "q1", prompt: "2+2?", kind: "single_choice", order: 0, points: 1, choices: [] }])),
-      json(envelope({ sessionId: "s1", scaledScore: 1, maxScore: 1, examType: "MOCK" })),
+      json(
+        envelope({
+          attemptId: "at1",
+          unitId: "u1",
+          family: "QUIZ",
+          status: "IN_PROGRESS",
+          timing: { startedAt: "t", endsAt: "t", serverNow: "t", remainingSeconds: 600 },
+          problems: [{ problemId: "p1", type: "RADIO", prompt: "2+2?", options: [{ id: "1", text: "4" }] }],
+        }),
+      ),
+      json(envelope(null)),
+      json(envelope({ attemptId: "at1", status: "COMPLETED", correct: 1, total: 1, scorePercent: 100 })),
     );
-    const session = await api.startExam("e1");
-    await api.getSessionQuestions(session.id);
-    const result = await api.submitSession("s1", [{ questionId: "q1", value: "A" }]);
-    expect(calls[0].url).toBe("/api/v1/assessment/exams/e1:start");
-    expect(calls[1].url).toBe("/api/v1/assessment/sessions/s1/questions");
-    expect(calls[2].url).toBe("/api/v1/assessment/sessions/s1:submit");
-    expect(JSON.parse(String(calls[2].init.body))).toEqual({ answers: [{ questionId: "q1", value: "A" }] });
-    expect(result.scaledScore).toBe(1);
+    const session = await api.startQuizAttempt("u1");
+    await api.autosaveAttempt(session.attemptId, { answers: [{ problemId: "p1", values: ["4"] }] });
+    const report = await api.submitAttempt(session.attemptId, {
+      answers: [{ problemId: "p1", values: ["4"] }],
+    });
+    expect(calls[0].url).toBe("/api/v1/assessment/quizzes/u1:start");
+    expect(calls[1].url).toBe("/api/v1/assessment/attempts/at1:autosave");
+    expect(calls[2].url).toBe("/api/v1/assessment/attempts/at1:submit");
+    expect(JSON.parse(String(calls[2].init.body))).toEqual({ answers: [{ problemId: "p1", values: ["4"] }] });
+    expect(report.scorePercent).toBe(100);
   });
 });
 

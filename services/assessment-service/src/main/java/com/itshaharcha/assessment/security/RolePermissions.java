@@ -36,7 +36,7 @@ public final class RolePermissions {
             return Set.of();
         }
         return switch (role) {
-            case "ROLE_ADMIN" -> ADMIN;
+            case "ROLE_ADMIN", "ROLE_MODERATOR" -> ADMIN;
             case "ROLE_TEACHER" -> TEACHER;
             case "ROLE_STUDENT" -> STUDENT;
             default -> Set.of();

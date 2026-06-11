@@ -8,7 +8,7 @@ public record IdentityProperties(String baseUrl) {
 
     public IdentityProperties {
         if (baseUrl == null || baseUrl.isBlank()) {
-            baseUrl = "http://localhost:9001";
+            baseUrl = "http://localhost:9003";
         }
     }
 }
